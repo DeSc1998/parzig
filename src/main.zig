@@ -1,24 +1,73 @@
 const std = @import("std");
 
-pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+fn isString(comptime value: anytype) bool {
+    // @TypeOf(string lit.) = *const [_:0]u8
+    const string_info = @typeInfo(@TypeOf(value));
+    return switch (string_info) {
+        .Pointer => |ptr| b: {
+            if (!ptr.is_const) break :b false;
+            const child_info = @typeInfo(ptr.child);
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
-
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
-
-    try bw.flush(); // don't forget to flush!
+            switch (child_info) {
+                .Opaque => break :b true,
+                else => break :b false,
+            }
+        },
+        else => false,
+    };
 }
 
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+fn validateParserRule(comptime string: []const u8) void {
+    if (string.len == 0 or std.mem.count(u8, string, " ") == string.len) @compileError("Rule value is empty");
+}
+
+fn validateFields(comptime fields: []const std.builtin.Type.StructField) void {
+    for (fields) |f| {
+        if (std.mem.eql(u8, f.name, "root")) continue;
+        if (f.type != Rule) {
+            var buffer: [1024]u8 = undefined;
+            const msg = std.fmt.bufPrint(
+                buffer[0..],
+                "Error: field '{s}' is not a Rule: type is '{s}'",
+                .{ f.name, @typeName(f.type) },
+            ) catch @compileError("format error");
+            @compileError(msg);
+        }
+        const default = f.default_value orelse @compileError("Rule has no value");
+        // NOTE: verified by the compiler
+        const casted = @as(*[]const u8, @ptrCast(@alignCast(@constCast(default))));
+        validateParserRule(casted.*);
+    }
+}
+
+fn fromOpaq(comptime T: type, ptr: ?*anyopaque) *T {
+    return @ptrCast(@alignCast(ptr));
+}
+
+const Rule = []const u8;
+
+const G = struct {
+    root: Rule = "test",
+    test_rule: Rule =
+        \\test
+    ,
+};
+
+const t = "aoeuao";
+
+fn isGrammar(comptime grammar: type) bool {
+    comptime {
+        const info = @typeInfo(grammar);
+        if (info != .Struct) @compileError("The provided grammar must be a struct");
+        if (!@hasField(grammar, "root")) @compileError("Grammar has no root rule");
+        const tmp = grammar{};
+        if (@TypeOf(@field(tmp, "root")) != Rule) @compileError("The field 'root' is not a rule");
+        validateFields(info.Struct.fields);
+    }
+    return true;
+}
+
+pub fn main() !void {
+    const g = isGrammar(G);
+    _ = g;
 }
