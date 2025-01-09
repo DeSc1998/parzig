@@ -19,13 +19,13 @@ const Macro = struct {
     rule_count: usize = 0,
 };
 
-const Subrule = union(enum) {
+pub const Subrule = union(enum) {
     rule: []const u8,
     macro: Macro,
     regex: []const u8,
 };
 
-const Rule = struct {
+pub const Rule = struct {
     rules: [32]Subrule = undefined,
     rule_count: usize = 0,
     internal: [512]Subrule = undefined,
