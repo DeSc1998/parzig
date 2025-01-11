@@ -60,4 +60,9 @@ fn isValid(comptime grammar: type) void {
         }
     }
 }
+
+/// fails to compile if the grammar is left-recursive
+fn isLeftRecursive(comptime grammar: Grammar) void {
+    _ = grammar;
+    comptimeLog("TODO: implement 'isLeftRecursive'", .{});
 }
