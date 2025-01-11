@@ -30,11 +30,15 @@ fn comptimeLog(comptime format: []const u8, comptime args: anytype) noreturn {
     @compileError(msg);
 }
 
-fn isValid(comptime grammar: type) bool {
+/// Checks if the definitions of `grammar` are sound.
+///
+/// ex.: Supose we have a grammar with a subrule in a definition which
+/// has no definition in that grammar then the compilation fails.
+fn isValid(comptime grammar: type) void {
     comptime {
         const info = @typeInfo(grammar);
         if (info != .Struct) @compileError("The provided grammar must be a struct");
-        if (!@hasField(grammar, "root")) @compileError("Grammar has no root rule");
+        if (!@hasField(grammar, "root")) @compileError("Grammar has no initial rule called 'root'");
         const tmp = grammar{};
         if (@TypeOf(@field(tmp, "root")) != Rule) @compileError("The field 'root' is not a rule");
         for (info.Struct.fields) |f| {
@@ -55,5 +59,5 @@ fn isValid(comptime grammar: type) bool {
             );
         }
     }
-    return true;
+}
 }
