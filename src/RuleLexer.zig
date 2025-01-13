@@ -7,8 +7,11 @@ pub const TokenKind = enum {
     Number,
     Regex,
 
-    OpenParen,
-    CloseParen,
+    OpenSequence,
+    CloseSequence,
+    OpenChoice,
+    CloseChoice,
+    RepeatOp,
     Comma,
 };
 
@@ -90,17 +93,24 @@ pub fn next(self: *RuleLexer) ?Token {
         return newToken(self.data[pos..self.current_position], .Identifier);
     } else if (char == '(') {
         _ = self.readChar() orelse unreachable;
-        return newToken(self.data[pos..self.current_position], .OpenParen);
+        return newToken(self.data[pos..self.current_position], .OpenSequence);
     } else if (char == ')') {
         _ = self.readChar() orelse unreachable;
-        return newToken(self.data[pos..self.current_position], .CloseParen);
-    } else if (char == ',') {
+        return newToken(self.data[pos..self.current_position], .CloseSequence);
+    } else if (char == '[') {
         _ = self.readChar() orelse unreachable;
-        return newToken(self.data[pos..self.current_position], .Comma);
+        return newToken(self.data[pos..self.current_position], .OpenChoice);
+    } else if (char == ']') {
+        _ = self.readChar() orelse unreachable;
+        return newToken(self.data[pos..self.current_position], .CloseChoice);
+    } else if (char == '*') {
+        _ = self.readChar() orelse unreachable;
+        return newToken(self.data[pos..self.current_position], .RepeatOp);
     } else if (char == '\'') {
         _ = self.readChar() orelse unreachable; // ignore initial `'`
         self.advanceWhile(&isRegex);
-        _ = self.readChar() orelse return null; // ignore final `'`
+        const quote = self.readChar() orelse return null; // ignore final `'`
+        if (quote != '\'') return null;
         return newToken(self.data[pos + 1 .. self.current_position - 1], .Regex);
     } else {
         errorOut("unexpected character '{}'", .{char});

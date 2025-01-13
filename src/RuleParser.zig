@@ -8,20 +8,21 @@ const ParserError = error{
     UnexpectedToken,
 };
 
-const macros = .{
-    "choice",
-    "prec",
+const BuildinKind = enum {
+    Sequence,
+    Choice,
+    Repeat,
 };
 
-const Macro = struct {
-    name: []const u8,
+const Buildin = struct {
+    kind: BuildinKind,
     subrules: [16]usize = undefined,
     rule_count: usize = 0,
 };
 
 pub const Subrule = union(enum) {
     rule: []const u8,
-    macro: Macro,
+    buildin: Buildin,
     regex: []const u8,
 };
 
@@ -86,7 +87,7 @@ fn expect(self: *RuleParser, kind: RuleLexer.TokenKind) ParserError!RuleLexer.To
     }
 }
 
-fn parseMacroSubrules(self: *RuleParser, out: *Macro) ParserError!void {
+fn parseBuildinSubrules(self: *RuleParser, out: *Buildin) ParserError!void {
     while (self.nextSubrule()) |rule| {
         if (out.subrules.len <= out.rule_count) errorOut("too many subrules in '{s}'", .{self.current_rule});
         self.expect(.Comma) catch {
@@ -106,15 +107,20 @@ fn nextSubrule(self: *RuleParser) ParserError!Subrule {
     const token = self.lexer.next() orelse return ParserError.EndOfRule;
     switch (token.kind) {
         .Identifier => {
-            _ = self.expect(.OpenParen) catch return .{
+            return .{
                 .rule = token.chars,
             };
-            var macro = .{ .macro = .{
-                .name = token.chars,
-            } };
-            try self.parseMacroSubrules(&macro);
-            return macro;
         },
+        .RepeatOp => {
+            const expr = try self.nextSubrule();
+            var out: Subrule = .{ .buildin = .{
+                .kind = .Repeat,
+            } };
+            out.buildin.subrules[0] = push(expr);
+            out.buildin.rule_count = 1;
+            return out;
+        },
+
         .Regex => return .{ .regex = token.chars },
         else => errorOut(
             "in rule '{s}': unexpected token kind {s} ('{s}')",
@@ -123,14 +129,7 @@ fn nextSubrule(self: *RuleParser) ParserError!Subrule {
     }
 }
 
-fn isAny(macro: []const u8, internals: []const []const u8) bool {
-    for (internals) |internal| {
-        if (std.mem.eql(u8, macro, internal)) return true;
-    }
-    return false;
-}
-
-fn validateSubrulesIndexed(self: RuleParser, rules: []usize) void {
+fn validateSubrulesIndexed(self: RuleParser, rules: []const usize) void {
     for (rules) |subrule| {
         switch (subrule_buffer[subrule]) {
             .rule => |r| {
@@ -139,12 +138,8 @@ fn validateSubrulesIndexed(self: RuleParser, rules: []usize) void {
                     .{ self.current_rule, r },
                 );
             },
-            .macro => |m| {
-                if (!isAny(m.name, macros)) errorOut(
-                    "in rule '{s}': invalid macro '{s}'",
-                    .{ self.current_rule, m.name },
-                );
-                validateSubrulesIndexed(self, m.subrules[0..m.rule_count]);
+            .buildin => |b| {
+                self.validateSubrulesIndexed(b.subrules[0..]);
             },
             else => {},
         }
@@ -160,12 +155,8 @@ fn validateSubrules(self: RuleParser, rules: []const Subrule) void {
                     .{ self.current_rule, r },
                 );
             },
-            .macro => |m| {
-                if (!isAny(m.name, macros)) errorOut(
-                    "in rule '{s}': invalid macro '{s}'",
-                    .{ self.current_rule, m.name },
-                );
-                validateSubrulesIndexed(self, m.subrules[0..m.rule_count]);
+            .buildin => |b| {
+                self.validateSubrulesIndexed(b.subrules[0..]);
             },
             else => {},
         }
