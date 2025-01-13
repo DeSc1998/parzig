@@ -9,6 +9,9 @@ const G = struct {
     root: Rule = "_test",
     test_rule: Rule = "_test",
     _test: Rule = "'test'",
+    repeat: Rule = "*test_rule",
+    choice: Rule = "[test_rule test_rule]",
+    seq: Rule = "(test_rule test_rule)",
 };
 
 pub fn main() !void {
@@ -16,5 +19,19 @@ pub fn main() !void {
     std.log.info("{}", .{g.parsed_rules.keys().len});
     for (g.parsed_rules.keys()) |key| {
         std.log.info("{s}", .{key});
+        const tmp = g.parsed_rules.get(key) orelse unreachable;
+        for (tmp.subrules()) |rule| {
+            switch (rule) {
+                .rule => |r| {
+                    std.log.info("  Rule: {s}", .{r});
+                },
+                .regex => |r| {
+                    std.log.info("  Regex: '{s}'", .{r});
+                },
+                .buildin => |b| {
+                    std.log.info("  Buildin: {any}", .{b.subrules});
+                },
+            }
+        }
     }
 }

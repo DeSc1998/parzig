@@ -16,8 +16,12 @@ const BuildinKind = enum {
 
 const Buildin = struct {
     kind: BuildinKind,
-    subrules: [16]usize = undefined,
+    subrules: [SUBRULE_BUFFER_CAPACITY]usize = undefined,
     rule_count: usize = 0,
+
+    pub fn rules(self: Buildin) []const usize {
+        return self.subrules[0..self.rule_count];
+    }
 };
 
 pub const Subrule = union(enum) {
@@ -27,9 +31,9 @@ pub const Subrule = union(enum) {
 };
 
 pub const Rule = struct {
-    rules: [32]Subrule = undefined,
+    rules: [SUBRULE_BUFFER_CAPACITY]Subrule = undefined,
     rule_count: usize = 0,
-    internal: [512]Subrule = undefined,
+    internal: [RULE_BUFFER_CAPACITY]Subrule = undefined,
 
     pub fn subrules(self: Rule) []const Subrule {
         return self.rules[0..self.rule_count];
@@ -39,18 +43,23 @@ pub const Rule = struct {
 grammar: type,
 current_rule: []const u8,
 lexer: RuleLexer,
+subrule_buffer: [RULE_BUFFER_CAPACITY]Subrule = undefined,
+subrule_buffer_count: usize = 0,
 
-var subrule_buffer: [512]Subrule = undefined;
-var subrule_buffer_count: usize = 0;
+last_unexpected_token: ?RuleLexer.Token = null,
 
-fn push(rule: Subrule) usize {
-    subrule_buffer[subrule_buffer_count] = rule;
-    subrule_buffer_count += 1;
-    return subrule_buffer_count - 1;
+const RULE_BUFFER_CAPACITY: usize = 128;
+const SUBRULE_BUFFER_CAPACITY: usize = 16;
+
+fn push(self: *RuleParser, rule: Subrule) usize {
+    if (self.subrule_buffer_count >= self.subrule_buffer.len) errorOut("exeeded internal subrule buffer", .{});
+    self.subrule_buffer[self.subrule_buffer_count] = rule;
+    self.subrule_buffer_count += 1;
+    return self.subrule_buffer_count - 1;
 }
 
-fn write_buffer(out: *[512]Subrule) void {
-    @memcpy(out.*, subrule_buffer);
+fn write_buffer(self: RuleParser, out: *[RULE_BUFFER_CAPACITY]Subrule) void {
+    @memcpy((out.*)[0..], self.subrule_buffer[0..]);
 }
 
 /// We assume `grammar` is validated by `fn isGrammar(comptime grammar: type)`
@@ -83,6 +92,7 @@ fn expect(self: *RuleParser, kind: RuleLexer.TokenKind) ParserError!RuleLexer.To
         return token;
     } else {
         self.lexer.reset(pos);
+        self.last_unexpected_token = token;
         return ParserError.UnexpectedToken;
     }
 }
@@ -90,15 +100,10 @@ fn expect(self: *RuleParser, kind: RuleLexer.TokenKind) ParserError!RuleLexer.To
 fn parseBuildinSubrules(self: *RuleParser, out: *Buildin) ParserError!void {
     while (self.nextSubrule()) |rule| {
         if (out.subrules.len <= out.rule_count) errorOut("too many subrules in '{s}'", .{self.current_rule});
-        self.expect(.Comma) catch {
-            try self.expect(.CloseParen);
-            out.subrules[out.rule_count] = push(rule);
-            out.rule_count += 1;
-            return;
-        };
-        out.subrules[out.rule_count] = push(rule);
+        out.subrules[out.rule_count] = self.push(rule);
         out.rule_count += 1;
     } else |err| {
+        if (err == ParserError.UnexpectedToken) return;
         return err;
     }
 }
@@ -106,32 +111,43 @@ fn parseBuildinSubrules(self: *RuleParser, out: *Buildin) ParserError!void {
 fn nextSubrule(self: *RuleParser) ParserError!Subrule {
     const token = self.lexer.next() orelse return ParserError.EndOfRule;
     switch (token.kind) {
-        .Identifier => {
-            return .{
-                .rule = token.chars,
-            };
-        },
+        .Identifier => return .{ .rule = token.chars },
+        .Regex => return .{ .regex = token.chars },
         .RepeatOp => {
             const expr = try self.nextSubrule();
             var out: Subrule = .{ .buildin = .{
                 .kind = .Repeat,
             } };
-            out.buildin.subrules[0] = push(expr);
+            out.buildin.subrules[0] = self.push(expr);
             out.buildin.rule_count = 1;
             return out;
         },
-
-        .Regex => return .{ .regex = token.chars },
-        else => errorOut(
-            "in rule '{s}': unexpected token kind {s} ('{s}')",
-            .{ self.current_rule, @tagName(token.kind), token.chars },
-        ),
+        .OpenChoice => {
+            var out: Subrule = .{ .buildin = .{
+                .kind = .Choice,
+            } };
+            try self.parseBuildinSubrules(&out.buildin);
+            _ = try self.expect(.CloseChoice);
+            return out;
+        },
+        .OpenSequence => {
+            var out: Subrule = .{ .buildin = .{
+                .kind = .Sequence,
+            } };
+            try self.parseBuildinSubrules(&out.buildin);
+            _ = try self.expect(.CloseSequence);
+            return out;
+        },
+        else => {
+            self.last_unexpected_token = token;
+            return ParserError.UnexpectedToken;
+        },
     }
 }
 
 fn validateSubrulesIndexed(self: RuleParser, rules: []const usize) void {
     for (rules) |subrule| {
-        switch (subrule_buffer[subrule]) {
+        switch (self.subrule_buffer[subrule]) {
             .rule => |r| {
                 if (!@hasField(self.grammar, r)) errorOut(
                     "in rule '{s}': subrule '{s}' not found in grammar",
@@ -139,7 +155,7 @@ fn validateSubrulesIndexed(self: RuleParser, rules: []const usize) void {
                 );
             },
             .buildin => |b| {
-                self.validateSubrulesIndexed(b.subrules[0..]);
+                self.validateSubrulesIndexed(b.rules());
             },
             else => {},
         }
@@ -156,7 +172,7 @@ fn validateSubrules(self: RuleParser, rules: []const Subrule) void {
                 );
             },
             .buildin => |b| {
-                self.validateSubrulesIndexed(b.subrules[0..]);
+                self.validateSubrulesIndexed(b.rules());
             },
             else => {},
         }
@@ -172,7 +188,15 @@ pub fn parse(self: *RuleParser) ?Rule {
     } else |err| {
         if (err == ParserError.EndOfRule and out.rule_count != 0) {
             validateSubrules(self.*, out.subrules());
+            self.write_buffer(&out.internal);
             return out;
+        }
+        if (err == ParserError.UnexpectedToken) {
+            const token = self.last_unexpected_token orelse unreachable;
+            errorOut(
+                "in rule '{s}': unexpected token kind {s} ('{s}')",
+                .{ self.current_rule, @tagName(token.kind), token.chars },
+            );
         }
         return null;
     }
