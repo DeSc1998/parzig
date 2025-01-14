@@ -9,9 +9,9 @@ const G = struct {
     root: Rule = "_test",
     test_rule: Rule = "_test",
     _test: Rule = "'test'",
-    repeat: Rule = "*test_rule",
-    choice: Rule = "[test_rule test_rule]",
-    seq: Rule = "(test_rule test_rule)",
+    repeat: Rule = "_test *test_rule",
+    choice: Rule = "_test [test_rule test_rule]",
+    seq: Rule = "_test (test_rule test_rule)",
 };
 
 pub fn main() !void {
@@ -29,7 +29,10 @@ pub fn main() !void {
                     std.log.info("  Regex: '{s}'", .{r});
                 },
                 .buildin => |b| {
-                    std.log.info("  Buildin: {any}", .{b.subrules});
+                    std.log.info("  Buildin({s}): {any}", .{
+                        @tagName(b.kind),
+                        b.subrules[0..b.rule_count],
+                    });
                 },
             }
         }

@@ -47,6 +47,7 @@ subrule_buffer: [RULE_BUFFER_CAPACITY]Subrule = undefined,
 subrule_buffer_count: usize = 0,
 
 last_unexpected_token: ?RuleLexer.Token = null,
+recursive_depth: usize = 0,
 
 const RULE_BUFFER_CAPACITY: usize = 128;
 const SUBRULE_BUFFER_CAPACITY: usize = 16;
@@ -83,7 +84,7 @@ fn errorOut(comptime format: []const u8, comptime args: anytype) noreturn {
     @compileError(msg);
 }
 
-fn expect(self: *RuleParser, kind: RuleLexer.TokenKind) ParserError!RuleLexer.TokenKind {
+fn expect(self: *RuleParser, kind: RuleLexer.TokenKind) ParserError!RuleLexer.Token {
     if (self.lexer.data.len <= self.lexer.current_position) return ParserError.EndOfRule;
 
     const pos = self.lexer.current_position;
@@ -98,17 +99,19 @@ fn expect(self: *RuleParser, kind: RuleLexer.TokenKind) ParserError!RuleLexer.To
 }
 
 fn parseBuildinSubrules(self: *RuleParser, out: *Buildin) ParserError!void {
+    self.recursive_depth += 1;
     while (self.nextSubrule()) |rule| {
         if (out.subrules.len <= out.rule_count) errorOut("too many subrules in '{s}'", .{self.current_rule});
         out.subrules[out.rule_count] = self.push(rule);
         out.rule_count += 1;
     } else |err| {
-        if (err == ParserError.UnexpectedToken) return;
-        return err;
+        self.recursive_depth -= 1;
+        if (err != ParserError.UnexpectedToken) return err;
     }
 }
 
 fn nextSubrule(self: *RuleParser) ParserError!Subrule {
+    const pos = self.lexer.current_position;
     const token = self.lexer.next() orelse return ParserError.EndOfRule;
     switch (token.kind) {
         .Identifier => return .{ .rule = token.chars },
@@ -126,19 +129,20 @@ fn nextSubrule(self: *RuleParser) ParserError!Subrule {
             var out: Subrule = .{ .buildin = .{
                 .kind = .Choice,
             } };
-            try self.parseBuildinSubrules(&out.buildin);
-            _ = try self.expect(.CloseChoice);
+            self.parseBuildinSubrules(&out.buildin) catch |err| @compileLog(err);
+            _ = self.expect(.CloseChoice) catch |err| @compileLog(err);
             return out;
         },
         .OpenSequence => {
             var out: Subrule = .{ .buildin = .{
                 .kind = .Sequence,
             } };
-            try self.parseBuildinSubrules(&out.buildin);
-            _ = try self.expect(.CloseSequence);
+            self.parseBuildinSubrules(&out.buildin) catch |err| @compileLog(err);
+            _ = self.expect(.CloseSequence) catch |err| @compileLog(err);
             return out;
         },
         else => {
+            self.lexer.reset(pos);
             self.last_unexpected_token = token;
             return ParserError.UnexpectedToken;
         },
