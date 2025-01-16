@@ -14,7 +14,7 @@ const BuildinKind = enum {
     Repeat,
 };
 
-const Buildin = struct {
+pub const Buildin = struct {
     kind: BuildinKind,
     subrules: [SUBRULE_BUFFER_CAPACITY]usize = undefined,
     rule_count: usize = 0,
@@ -49,6 +49,7 @@ subrule_buffer_count: usize = 0,
 last_unexpected_token: ?RuleLexer.Token = null,
 recursive_depth: usize = 0,
 
+// TODO: chosing more reasonable sizes for these buffers
 const RULE_BUFFER_CAPACITY: usize = 128;
 const SUBRULE_BUFFER_CAPACITY: usize = 16;
 

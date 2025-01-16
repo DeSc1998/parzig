@@ -2,6 +2,10 @@ const std = @import("std");
 
 const RuleParser = @import("RuleParser.zig");
 
+pub const ParsedRule = RuleParser.Rule;
+pub const Subrule = RuleParser.Subrule;
+pub const BuildinRule = RuleParser.Buildin;
+
 pub const Rule = []const u8;
 const RuleMap = std.static_string_map.StaticStringMap(RuleParser.Rule);
 const Grammar = @This();
