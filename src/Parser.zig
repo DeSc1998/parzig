@@ -100,10 +100,69 @@ fn parseBuildin(
     rule_context: Grammar.ParsedRule,
     buildin: Grammar.BuildinRule,
 ) Error!usize {
-    _ = self;
-    _ = rule_context;
-    _ = buildin;
-    return Error.NotImplemented;
+    const pos = self.current_position;
+    switch (buildin.kind) {
+        .Repeat => {
+            const rule_index = (buildin.rules())[0];
+            const rule = rule_context.internal[rule_index];
+            var buffer = std.ArrayList(usize).init(self.allocator);
+            while (self.parseSubrule(rule_context, rule)) |index| {
+                try buffer.append(index);
+            } else |err| {
+                switch (err) {
+                    Error.EndOfInput, Error.RegexMatch => {
+                        const repeat_node: Node = .{
+                            .kind = "repeat",
+                            .allocator = self.allocator,
+                            .children = try buffer.toOwnedSlice(),
+                            .start_index = pos,
+                            .end_index = self.current_position,
+                        };
+                        const repeat_index = self.node_buffer.items.len;
+                        try self.node_buffer.append(repeat_node);
+                        return repeat_index;
+                    },
+                }
+            }
+        },
+        .Sequence => {
+            var buffer = std.ArrayList(usize).init(self.allocator);
+            for (buildin.rules()) |rule_index| {
+                const rule = rule_context.internal[rule_index];
+                const parsed_index = try self.parseSubrule(rule_context, rule);
+                try buffer.append(parsed_index);
+            }
+            const seq_node: Node = .{
+                .kind = "sequence",
+                .allocator = self.allocator,
+                .children = try buffer.toOwnedSlice(),
+                .start_index = pos,
+                .end_index = self.current_position,
+            };
+            const index = self.node_buffer.items.len;
+            try self.node_buffer.append(seq_node);
+            return index;
+        },
+        .Choice => {
+            var buffer = std.ArrayList(usize).init(self.allocator);
+            for (buildin.rules()) |rule_index| {
+                const rule = rule_context.internal[rule_index];
+                const parsed_index = self.parseSubrule(rule_context, rule) catch continue;
+                try buffer.append(parsed_index);
+                const seq_node: Node = .{
+                    .kind = "choice",
+                    .allocator = self.allocator,
+                    .children = try buffer.toOwnedSlice(),
+                    .start_index = pos,
+                    .end_index = self.current_position,
+                };
+                const index = self.node_buffer.items.len;
+                try self.node_buffer.append(seq_node);
+                return index;
+            }
+            return Error.RegexMatch;
+        },
+    }
 }
 
 fn parseRegex(
