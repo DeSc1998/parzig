@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const Grammar = @import("Grammar.zig");
+const regex = @import("regex.zig");
 const Parser = @This();
 
 const Error = error{
@@ -9,7 +10,7 @@ const Error = error{
     EndOfInput,
 } || std.mem.Allocator.Error;
 
-const Node = struct {
+pub const Node = struct {
     allocator: std.mem.Allocator,
     kind: []const u8,
     start_index: usize,
@@ -17,7 +18,7 @@ const Node = struct {
 
     children: []const usize,
 
-    pub fn deinit(self: Tree) void {
+    pub fn deinit(self: Node) void {
         self.allocator.free(self.children);
     }
 };
@@ -73,6 +74,10 @@ fn parseNode(self: *Parser, kind: []const u8) Error!usize {
     var out = std.ArrayList(usize).init(self.allocator);
     for (rule.subrules()) |subrule| {
         const index = try self.parseSubrule(rule, subrule);
+        if (std.mem.eql(u8, self.node_buffer.items[index].kind, "regex")) {
+            self.node_buffer.items[index].kind = kind;
+            return index;
+        }
         try out.append(index);
     }
     const node: Node = .{
@@ -122,6 +127,7 @@ fn parseBuildin(
                         try self.node_buffer.append(repeat_node);
                         return repeat_index;
                     },
+                    else => return err,
                 }
             }
         },
@@ -167,9 +173,26 @@ fn parseBuildin(
 
 fn parseRegex(
     self: *Parser,
-    regex: []const u8,
+    expr: []const u8,
 ) Error!usize {
-    _ = self;
-    _ = regex;
+    switch (regex.match(expr, self.source[self.current_position..])) {
+        .succes => |out| {
+            const node: Node = .{
+                .kind = "regex",
+                .children = ([0]usize{})[0..],
+                .allocator = self.allocator,
+                .start_index = self.current_position,
+                .end_index = self.current_position + out.len,
+            };
+            self.current_position += out.len;
+            const index = self.node_buffer.items.len;
+            try self.node_buffer.append(node);
+            return index;
+        },
+        .failure => |f| {
+            std.log.err("failed to match regex: {s}", .{f.message});
+            return Error.RegexMatch;
+        },
+    }
     return Error.NotImplemented;
 }

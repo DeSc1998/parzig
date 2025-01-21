@@ -14,6 +14,7 @@ parsed_rules: RuleMap,
 
 pub fn init(comptime grammar: type) Grammar {
     _ = isValid(grammar);
+    @setEvalBranchQuota(2000); // NOTE: the default of 1000 is not enough
     const info = @typeInfo(grammar);
     return .{
         .parsed_rules = comptime b: {
@@ -26,6 +27,10 @@ pub fn init(comptime grammar: type) Grammar {
             break :b RuleMap.initComptime(out);
         },
     };
+}
+
+pub fn get(g: Grammar, node: []const u8) ?RuleParser.Rule {
+    return g.parsed_rules.get(node);
 }
 
 fn comptimeLog(comptime format: []const u8, comptime args: anytype) noreturn {
