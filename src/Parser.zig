@@ -98,6 +98,10 @@ pub fn parse(self: *Parser) Error!Tree {
     };
 }
 
+pub fn unparsed(self: Parser) []const u8 {
+    return self.source[self.current_position..];
+}
+
 pub fn printErrorContext(self: Parser) !void {
     if (context) |c| {
         const tmp_node: Node = .{
