@@ -89,6 +89,10 @@ const RegexParser = struct {
             switch (token.kind) {
                 .Char => {
                     std.debug.assert(token.chars.len == 1);
+                    if (!std.ascii.isWhitespace(token.chars[0]))
+                        while (std.ascii.isWhitespace(source[self.current_index])) {
+                            self.current_index += 1;
+                        };
                     if (source[self.current_index] == token.chars[0]) {
                         self.current_index += 1;
                     } else return Error.CharacterMissmatch;
