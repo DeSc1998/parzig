@@ -21,7 +21,7 @@ pub fn init(comptime grammar: type) Grammar {
             var out: [info.Struct.fields.len]struct { []const u8, RuleParser.Rule } = undefined;
             for (&out, info.Struct.fields) |*entry, field| {
                 var rule_parser = RuleParser.init(grammar, field.name);
-                const out_rule = rule_parser.parse() orelse unreachable; // NOTE: verified by 'isValid'
+                const out_rule = rule_parser.parse() catch unreachable; // NOTE: verified by 'isValid'
                 entry.* = .{ field.name, out_rule };
             }
             break :b RuleMap.initComptime(out);
@@ -62,9 +62,9 @@ fn isValid(comptime grammar: type) void {
             const casted = @as(*[]const u8, @ptrCast(@alignCast(@constCast(default))));
             _ = casted.*;
             var parser = RuleParser.init(grammar, f.name);
-            _ = parser.parse() orelse comptimeLog(
-                "rule '{s}' has no definition or is invalid",
-                .{f.name},
+            _ = parser.parse() catch |err| comptimeLog(
+                "rule '{s}' has no definition or is invalid: {s}",
+                .{ f.name, @tagName(err) },
             );
         }
     }

@@ -5,6 +5,7 @@ const RuleParser = @This();
 
 const ParserError = error{
     EndOfRule,
+    RuleDoesNotExist,
     UnexpectedToken,
 };
 
@@ -115,7 +116,7 @@ fn nextSubrule(self: *RuleParser) ParserError!Subrule {
     const pos = self.lexer.current_position;
     const token = self.lexer.next() orelse return ParserError.EndOfRule;
     switch (token.kind) {
-        .Identifier => return .{ .rule = token.chars },
+        .Identifier => return if (@hasField(self.grammar, token.chars)) .{ .rule = token.chars } else ParserError.RuleDoesNotExist,
         .Regex => return .{ .regex = token.chars },
         .RepeatOp => {
             const expr = try self.nextSubrule();
@@ -184,7 +185,7 @@ fn validateSubrules(self: RuleParser, rules: []const Subrule) void {
     }
 }
 
-pub fn parse(self: *RuleParser) ?Rule {
+pub fn parse(self: *RuleParser) ParserError!Rule {
     var out = Rule{};
     while (self.nextSubrule()) |rule| {
         if (out.rules.len <= out.rule_count) errorOut("too many subrules in '{s}'", .{self.current_rule});

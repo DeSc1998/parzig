@@ -19,7 +19,7 @@ var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 const allocator = arena.allocator();
 
 pub fn main() !void {
-    const source = try allocator.dupe(u8, "tes aoeusnthaoeu");
+    const source = try allocator.dupe(u8, " test test test aoeusnthaoeu");
     errdefer allocator.free(source);
     var parser = Parser.init(Grammar.init(G), allocator, source);
     const tree = parser.parse() catch |err| {
@@ -30,7 +30,7 @@ pub fn main() !void {
     };
     defer tree.deinit();
     print_tree(tree);
-    std.log.info("\nrest of input: {s}", .{tree.source[parser.current_position..]});
+    std.log.info("\nrest of input: {s}", .{parser.unparsed()});
 }
 
 fn print_tree(tree: Parser.Tree) void {
