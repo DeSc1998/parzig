@@ -1,19 +1,10 @@
 const std = @import("std");
 
 // const RuleParser = @import("RuleParser.zig");
-const Parser = @import("Parser.zig");
-const Grammar = @import("Grammar.zig");
+const parser = @import("Parser.zig");
 
-const Rule = Grammar.Rule;
-
-const G = struct {
-    root: Rule = "_test",
-    test_rule: Rule = "_test",
-    _test: Rule = "'test'",
-    repeat: Rule = "_test *test_rule",
-    choice: Rule = "_test [test_rule test_rule]",
-    seq: Rule = "_test (test_rule test_rule)",
-};
+const G = @import("TestGrammar.zig");
+const Parser = parser.Parser(G);
 
 var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 const allocator = arena.allocator();
@@ -21,19 +12,19 @@ const allocator = arena.allocator();
 pub fn main() !void {
     const source = try allocator.dupe(u8, " test test test aoeusnthaoeu");
     errdefer allocator.free(source);
-    var parser = Parser.init(Grammar.init(G), allocator, source);
-    const tree = parser.parse() catch |err| {
+    var p = Parser.init(allocator, source);
+    const tree = p.parse() catch |err| {
         std.log.err("{}", .{err});
-        try parser.printErrorContext();
+        try p.printErrorContext();
         arena.deinit();
         std.process.exit(1);
     };
     defer tree.deinit();
     print_tree(tree);
-    std.log.info("\nrest of input: {s}", .{parser.unparsed()});
+    std.log.info("\nrest of input: {s}", .{p.unparsed()});
 }
 
-fn print_tree(tree: Parser.Tree) void {
+fn print_tree(tree: parser.Tree) void {
     const root = tree.node(tree.root);
     std.log.info("{s}", .{root.kind});
     for (root.children) |child_index| {
@@ -42,7 +33,7 @@ fn print_tree(tree: Parser.Tree) void {
 }
 
 fn print_node(
-    tree: Parser.Tree,
+    tree: parser.Tree,
     node_index: usize,
     indent: usize,
 ) void {
@@ -53,8 +44,20 @@ fn print_node(
     }
     const node = tree.node(node_index);
     const chars = tree.chars(node_index);
-    std.log.info("{s}{s}: {s}", .{ tmp, node.kind, chars });
+    if (isBuildinNode(node.kind)) {
+        std.log.info("{s}{s}", .{ tmp, node.kind });
+    } else {
+        std.log.info("{s}{s}: {s}", .{ tmp, node.kind, chars });
+    }
     for (node.children) |child_index| {
         print_node(tree, child_index, indent + 1);
     }
+}
+
+fn isBuildinNode(chars: []const u8) bool {
+    const types: []const []const u8 = &.{ "repeat", "sequence", "choice" };
+    for (types) |t| {
+        if (std.mem.eql(u8, chars, t)) return true;
+    }
+    return false;
 }
