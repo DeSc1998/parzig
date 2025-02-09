@@ -45,7 +45,7 @@ pub fn RuleMap(comptime Grammar: type) StringMap(RuleFrom(RulesEnum(Grammar))) {
 ///
 /// ex.: Supose we have a grammar with a subrule in a definition which
 /// has no definition in that grammar then the compilation fails.
-pub fn isValid(comptime grammar: type) void {
+fn isValid(comptime grammar: type) void {
     comptime {
         const info = @typeInfo(grammar);
         if (info != .Struct) @compileError("The provided grammar must be a struct");
