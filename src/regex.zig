@@ -1,5 +1,8 @@
 const std = @import("std");
 
+var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+const allocator = arena.allocator();
+
 const RegexMatch = union(enum) {
     succes: []const u8,
     failure: struct {
@@ -10,23 +13,37 @@ const RegexMatch = union(enum) {
 };
 
 pub fn match(regex: []const u8, source: []const u8) RegexMatch {
+    defer if (!arena.reset(.retain_capacity)) {
+        _ = arena.reset(.free_all);
+    };
     var parser = RegexParser.init(regex);
-    const chars = parser.consume(source) catch |err| {
-        const message = switch (err) {
-            Error.CharacterMissmatch => "failed to match character",
-            Error.CharacterMissmatchChoice => "failed to match character in choice",
-            Error.InvalidEscapedChar => "invalid escaped character in regex",
-            Error.EndOfInput => "unexpected end of input",
-            Error.RegexParsingFailed => "invalid regex",
-            Error.NotImplemented => "reach an unimplemented path",
-        };
+    parser.parse() catch |err| {
         return RegexMatch{ .failure = .{
             .source_offset = parser.current_index,
             .regex_offset = parser.lexer.current_position,
-            .message = message,
+            .message = errorToMessage(err),
+        } };
+    };
+    const chars = parser.consume(source) catch |err| {
+        return RegexMatch{ .failure = .{
+            .source_offset = parser.current_index,
+            .regex_offset = parser.lexer.current_position,
+            .message = errorToMessage(err),
         } };
     };
     return RegexMatch{ .succes = chars };
+}
+
+fn errorToMessage(err: Error) []const u8 {
+    return switch (err) {
+        Error.CharacterMissmatch => "failed to match character",
+        Error.CharacterMissmatchChoice => "failed to match character in choice",
+        Error.InvalidEscapedChar => "invalid escaped character in regex",
+        Error.EndOfInput => "unexpected end of input",
+        Error.RegexParsingFailed => "invalid regex",
+        Error.NotImplemented => "reach an unimplemented path",
+        Error.OutOfMemory => "out of memory",
+    };
 }
 
 const TokenKind = enum {
@@ -45,12 +62,11 @@ const Token = struct {
     chars: []const u8,
 };
 
-const RegexExpression = struct {
-    kind: enum { Char, EscapedChar, Repeat, Sequence, Choice },
-    data: union(enum) {
-        char: u8,
-        slice: []const u8,
-    },
+const RegexExpression = union(enum) {
+    char: u8,
+    seq: []const RegexExpression,
+    choice: []const RegexExpression,
+    repeat: *const RegexExpression,
 };
 
 const Error = error{
@@ -60,11 +76,12 @@ const Error = error{
     EndOfInput,
     RegexParsingFailed,
     NotImplemented,
-};
+} || std.mem.Allocator.Error;
 
 const RegexParser = struct {
     current_index: usize = 0,
     lexer: RegexLexer,
+    expressions: std.ArrayList(RegexExpression) = std.ArrayList(RegexExpression).init(allocator),
 
     const escaped_char_map = std.static_string_map.StaticStringMap(u8).initComptime(.{
         .{ "n", '\n' },
@@ -83,36 +100,63 @@ const RegexParser = struct {
         return .{ .lexer = RegexLexer.init(data) };
     }
 
-    fn consume(self: *RegexParser, source: []const u8) Error![]const u8 {
+    fn parse(self: *RegexParser) Error!void {
         while (self.lexer.next()) |token| {
-            if (self.current_index >= source.len) return Error.EndOfInput;
             switch (token.kind) {
                 .Char => {
                     std.debug.assert(token.chars.len == 1);
-                    if (!std.ascii.isWhitespace(token.chars[0]))
-                        while (std.ascii.isWhitespace(source[self.current_index])) {
-                            self.current_index += 1;
-                        };
-                    if (source[self.current_index] == token.chars[0]) {
-                        self.current_index += 1;
-                    } else return Error.CharacterMissmatch;
+                    try self.expressions.append(
+                        .{ .char = token.chars[0] },
+                    );
                 },
                 .EscapedChar => {
                     std.debug.assert(token.chars.len == 1);
                     const char = RegexParser.escaped_char_map.get(
                         token.chars,
                     ) orelse return Error.InvalidEscapedChar;
-                    if (source[self.current_index] == char) {
-                        self.current_index += 1;
-                    } else return Error.CharacterMissmatch;
+                    try self.expressions.append(
+                        .{ .char = char },
+                    );
                 },
                 else => return Error.NotImplemented,
             }
         }
-        return if (self.lexer.current_position == self.lexer.data.len)
-            source[0..self.current_index]
-        else
-            Error.RegexParsingFailed;
+    }
+
+    fn consume(self: *RegexParser, source: []const u8) Error![]const u8 {
+        self.current_index = 0;
+        for (self.expressions.items) |expr| {
+            const consumed = try self.consumeExpr(expr, source[self.current_index..]);
+            self.current_index += consumed;
+        }
+        return source[0..self.current_index];
+    }
+
+    fn consumeExpr(
+        self: RegexParser,
+        expr: RegexExpression,
+        source: []const u8,
+    ) Error!usize {
+        var current_index: usize = 0;
+        std.debug.assert(source.len > 0);
+        switch (expr) {
+            .char => |c| {
+                if (!std.ascii.isWhitespace(c) and std.ascii.isWhitespace(source[0])) {
+                    while (std.ascii.isWhitespace(source[current_index])) {
+                        current_index += 1;
+                    }
+                }
+                return if (source[current_index] == c) current_index + 1 else Error.CharacterMissmatch;
+            },
+            .seq => |exprs| {
+                for (exprs) |e| {
+                    const comsumed = try self.consumeExpr(e, source[current_index..]);
+                    current_index += comsumed;
+                }
+                return current_index;
+            },
+            else => return Error.NotImplemented,
+        }
     }
 };
 
