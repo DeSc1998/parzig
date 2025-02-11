@@ -17,13 +17,6 @@ pub fn match(regex: []const u8, source: []const u8) RegexMatch {
         _ = arena.reset(.free_all);
     };
     var parser = RegexParser.init(regex);
-    parser.parse() catch |err| {
-        return RegexMatch{ .failure = .{
-            .source_offset = parser.current_index,
-            .regex_offset = parser.lexer.current_position,
-            .message = errorToMessage(err),
-        } };
-    };
     const chars = parser.consume(source) catch |err| {
         return RegexMatch{ .failure = .{
             .source_offset = parser.current_index,
@@ -41,7 +34,7 @@ fn errorToMessage(err: Error) []const u8 {
         Error.InvalidEscapedChar => "invalid escaped character in regex",
         Error.EndOfInput => "unexpected end of input",
         Error.RegexParsingFailed => "invalid regex",
-        Error.NotImplemented => "reach an unimplemented path",
+        Error.NotImplemented => "reach a not implemented path",
         Error.OutOfMemory => "out of memory",
     };
 }
@@ -81,12 +74,8 @@ const Error = error{
 const RegexParser = struct {
     current_index: usize = 0,
     lexer: RegexLexer,
-    expressions: std.ArrayList(RegexExpression) = std.ArrayList(RegexExpression).init(allocator),
 
     const escaped_char_map = std.static_string_map.StaticStringMap(u8).initComptime(.{
-        .{ "n", '\n' },
-        .{ "t", '\t' },
-        .{ "r", '\r' },
         .{ "[", '[' },
         .{ "]", ']' },
         .{ "(", '(' },
@@ -100,35 +89,29 @@ const RegexParser = struct {
         return .{ .lexer = RegexLexer.init(data) };
     }
 
-    fn parse(self: *RegexParser) Error!void {
-        while (self.lexer.next()) |token| {
-            switch (token.kind) {
-                .Char => {
-                    std.debug.assert(token.chars.len == 1);
-                    try self.expressions.append(
-                        .{ .char = token.chars[0] },
-                    );
-                },
-                .EscapedChar => {
-                    std.debug.assert(token.chars.len == 1);
-                    const char = RegexParser.escaped_char_map.get(
-                        token.chars,
-                    ) orelse return Error.InvalidEscapedChar;
-                    try self.expressions.append(
-                        .{ .char = char },
-                    );
-                },
-                else => return Error.NotImplemented,
-            }
+    fn parse(self: *RegexParser) Error!RegexExpression {
+        const token = self.lexer.next() orelse return Error.EndOfInput;
+        switch (token.kind) {
+            .Char => {
+                return .{ .char = token.chars[0] };
+            },
+            .EscapedChar => {
+                std.debug.assert(token.chars.len == 1);
+                const char = RegexParser.escaped_char_map.get(
+                    token.chars,
+                ) orelse return Error.InvalidEscapedChar;
+                return .{ .char = char };
+            },
+            else => return Error.NotImplemented,
         }
     }
 
     fn consume(self: *RegexParser, source: []const u8) Error![]const u8 {
         self.current_index = 0;
-        for (self.expressions.items) |expr| {
+        while (self.parse()) |expr| {
             const consumed = try self.consumeExpr(expr, source[self.current_index..]);
             self.current_index += consumed;
-        }
+        } else |err| if (err != Error.EndOfInput) return err;
         return source[0..self.current_index];
     }
 
@@ -142,8 +125,10 @@ const RegexParser = struct {
         switch (expr) {
             .char => |c| {
                 if (!std.ascii.isWhitespace(c) and std.ascii.isWhitespace(source[0])) {
-                    while (std.ascii.isWhitespace(source[current_index])) {
+                    var char = if (source.len > current_index) source[current_index] else return Error.EndOfInput;
+                    while (std.ascii.isWhitespace(char)) {
                         current_index += 1;
+                        char = if (source.len > current_index) source[current_index] else return Error.EndOfInput;
                     }
                 }
                 return if (source[current_index] == c) current_index + 1 else Error.CharacterMissmatch;
