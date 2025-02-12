@@ -10,7 +10,7 @@ var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 const allocator = arena.allocator();
 
 pub fn main() !void {
-    const source = try allocator.dupe(u8, " test test test aoeusnthaoeu");
+    const source = try allocator.dupe(u8, " test test test aoeussssnthaoeu");
     errdefer allocator.free(source);
     var p = Parser.init(allocator, source);
     const tree = p.parse() catch |err| {
