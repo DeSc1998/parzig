@@ -48,15 +48,17 @@ const TokenKind = enum {
     OpenSequence,
     CloseSequence,
     OpenRange,
+    RangeMinus,
     CloseRange,
     OpenChoice,
     CloseChoice,
     RepeatOp,
+    RepeatPlusOp,
 };
 
 const Token = struct {
     kind: TokenKind,
-    chars: []const u8,
+    char: u8,
 };
 
 const RegexExpression = union(enum) {
@@ -65,6 +67,7 @@ const RegexExpression = union(enum) {
     seq: []const RegexExpression,
     choice: []const RegexExpression,
     repeat: *const RegexExpression,
+    repeat_plus: *const RegexExpression,
 };
 
 const Error = error{
@@ -82,16 +85,6 @@ const RegexParser = struct {
     current_index: usize = 0,
     lexer: RegexLexer,
 
-    const escaped_char_map = std.static_string_map.StaticStringMap(u8).initComptime(.{
-        .{ "[", '[' },
-        .{ "]", ']' },
-        .{ "(", '(' },
-        .{ ")", ')' },
-        .{ "{", '{' },
-        .{ "}", '}' },
-        .{ "*", '*' },
-    });
-
     fn init(data: []const u8) RegexParser {
         return .{ .lexer = RegexLexer.init(data) };
     }
@@ -107,44 +100,53 @@ const RegexParser = struct {
         }
     }
 
+    fn expect(self: *RegexParser, kind: TokenKind) Error!Token {
+        const pos = self.lexer.current_position;
+        const current = self.lexer.next() orelse return Error.EndOfRegex;
+        if (current.kind == kind) {
+            return current;
+        } else {
+            self.lexer.current_position = pos;
+            return Error.UnexpectedRegexToken;
+        }
+    }
+
     fn parse(self: *RegexParser) Error!RegexExpression {
         const token = self.lexer.next() orelse return Error.EndOfRegex;
         switch (token.kind) {
             .Char => {
-                return .{ .char = token.chars[0] };
+                return .{ .char = token.char };
             },
             .EscapedChar => {
-                std.debug.assert(token.chars.len == 1);
-                const char = RegexParser.escaped_char_map.get(
-                    token.chars,
-                ) orelse return Error.InvalidEscapedChar;
-                return .{ .char = char };
+                const tmp = self.lexer.next() orelse return Error.EndOfRegex;
+                return .{ .char = tmp.char };
             },
             .OpenSequence => {
                 const out = try self.parseSequence();
-                const end = self.lexer.next() orelse return Error.EndOfRegex;
-                std.debug.assert(end.kind == .CloseSequence);
+                _ = try self.expect(.CloseSequence);
                 return out;
             },
             .OpenChoice => {
                 const out = try self.parseChoice();
-                const end = self.lexer.next() orelse return Error.EndOfRegex;
-                std.debug.assert(end.kind == .CloseChoice);
+                _ = try self.expect(.CloseChoice);
                 return out;
             },
             .OpenRange => {
-                const start = self.lexer.next() orelse return Error.EndOfRegex;
-                std.debug.assert(start.kind == .Char);
-                const end = self.lexer.next() orelse return Error.EndOfRegex;
-                std.debug.assert(end.kind == .Char);
-                const tmp = self.lexer.next() orelse return Error.EndOfRegex;
-                std.debug.assert(tmp.kind == .CloseRange);
-                return .{ .range = .{ .start = start.chars[0], .end = end.chars[0] } };
+                const start = try self.expect(.Char);
+                _ = try self.expect(.RangeMinus);
+                const end = try self.expect(.Char);
+                _ = try self.expect(.CloseRange);
+                return .{ .range = .{ .start = start.char, .end = end.char } };
             },
             .RepeatOp => {
                 const tmp = try allocator.create(RegexExpression);
                 tmp.* = try self.parse();
                 return .{ .repeat = tmp };
+            },
+            .RepeatPlusOp => {
+                const tmp = try allocator.create(RegexExpression);
+                tmp.* = try self.parse();
+                return .{ .repeat_plus = tmp };
             },
             else => return Error.UnexpectedRegexToken,
         }
@@ -175,28 +177,37 @@ const RegexParser = struct {
         while (self.parse()) |expr| {
             const consumed = try self.consumeExpr(expr, source[self.current_index..]);
             self.current_index += consumed;
+            if (self.current_index < source.len) std.log.info("source = {s}", .{source[self.current_index..]});
         } else |err| if (err != Error.EndOfRegex) return err;
         return source[0..self.current_index];
+    }
+
+    fn matchesWhitespace(expr: RegexExpression) bool {
+        return switch (expr) {
+            .char => |c| std.ascii.isWhitespace(c),
+            .choice => |cs| b: {
+                for (cs) |c| {
+                    if (matchesWhitespace(c)) {
+                        break :b true;
+                    }
+                }
+                break :b false;
+            },
+            .range => false, // TODO: proper checking for ranges
+            .seq => |cs| cs.len > 0 and matchesWhitespace(cs[0]),
+            .repeat => |c| matchesWhitespace(c.*),
+            .repeat_plus => |c| matchesWhitespace(c.*),
+        };
     }
 
     fn skipWhitespace(self: *RegexParser, source: []const u8) void {
         const pos = self.lexer.current_position;
         defer self.lexer.current_position = pos;
         const tmp = self.parse() catch return;
-        switch (tmp) {
-            .char => |char| {
-                if (!std.ascii.isWhitespace(char)) {
-                    while (source.len > self.current_index and std.ascii.isWhitespace(source[self.current_index])) {
-                        self.current_index += 1;
-                    }
-                }
-            },
-            // TODO: assumed non whitespace character. BAD!!!
-            else => {
-                while (source.len > self.current_index and std.ascii.isWhitespace(source[self.current_index])) {
-                    self.current_index += 1;
-                }
-            },
+        if (!matchesWhitespace(tmp)) {
+            while (source.len > self.current_index and std.ascii.isWhitespace(source[self.current_index])) {
+                self.current_index += 1;
+            }
         }
     }
 
@@ -209,6 +220,7 @@ const RegexParser = struct {
         if (source.len == 0) return Error.EndOfInput;
         switch (expr) {
             .char => |c| {
+                if (std.mem.containsAtLeast(u8, "()*", 1, &.{c})) std.log.info("char = {c}, source = '{s}'", .{ c, source });
                 return if (source[current_index] == c) current_index + 1 else Error.CharacterMissmatch;
             },
             .range => |r| {
@@ -229,9 +241,16 @@ const RegexParser = struct {
                     current_index += comsumed;
                     break;
                 }
-                return current_index;
+                return if (current_index != 0) current_index else Error.CharacterMissmatchChoice;
             },
             .repeat => |e| {
+                while (self.consumeExpr(e.*, source[current_index..])) |consumed| {
+                    current_index += consumed;
+                } else |_| {}
+                return current_index;
+            },
+            .repeat_plus => |e| {
+                current_index += try self.consumeExpr(e.*, source[current_index..]);
                 while (self.consumeExpr(e.*, source[current_index..])) |consumed| {
                     current_index += consumed;
                 } else |_| {}
@@ -251,19 +270,15 @@ const RegexLexer = struct {
         };
     }
 
-    fn newToken(chars: []const u8, kind: TokenKind) Token {
+    fn newToken(char: u8, kind: TokenKind) Token {
         return .{
             .kind = kind,
-            .chars = chars,
+            .char = char,
         };
     }
 
-    pub fn reset(self: *RegexLexer, index: usize) void {
-        self.current_position = index;
-    }
-
     fn peekChar(self: RegexLexer) ?u8 {
-        if (self.data.len > self.current_position) {
+        if (self.current_position < self.data.len) {
             return self.data[self.current_position];
         } else {
             return null;
@@ -271,7 +286,7 @@ const RegexLexer = struct {
     }
 
     fn readChar(self: *RegexLexer) ?u8 {
-        if (self.data.len > self.current_position) {
+        if (self.current_position < self.data.len) {
             const tmp = self.data[self.current_position];
             self.current_position += 1;
             return tmp;
@@ -280,38 +295,24 @@ const RegexLexer = struct {
         }
     }
 
-    fn next(self: *RegexLexer) ?Token {
-        const char = self.peekChar() orelse return null;
+    fn kindOf(char: u8) TokenKind {
+        return switch (char) {
+            '(' => .OpenSequence,
+            ')' => .CloseSequence,
+            '[' => .OpenChoice,
+            ']' => .CloseChoice,
+            '{' => .OpenRange,
+            '}' => .CloseRange,
+            '*' => .RepeatOp,
+            '+' => .RepeatPlusOp,
+            '-' => .RangeMinus,
+            '\\' => .EscapedChar,
+            else => .Char,
+        };
+    }
 
-        const pos = self.current_position;
-        if (char == '(') {
-            _ = self.readChar() orelse unreachable;
-            return newToken(self.data[pos..self.current_position], .OpenSequence);
-        } else if (char == ')') {
-            _ = self.readChar() orelse unreachable;
-            return newToken(self.data[pos..self.current_position], .CloseSequence);
-        } else if (char == '[') {
-            _ = self.readChar() orelse unreachable;
-            return newToken(self.data[pos..self.current_position], .OpenChoice);
-        } else if (char == ']') {
-            _ = self.readChar() orelse unreachable;
-            return newToken(self.data[pos..self.current_position], .CloseChoice);
-        } else if (char == '{') {
-            _ = self.readChar() orelse unreachable;
-            return newToken(self.data[pos..self.current_position], .OpenRange);
-        } else if (char == '}') {
-            _ = self.readChar() orelse unreachable;
-            return newToken(self.data[pos..self.current_position], .CloseRange);
-        } else if (char == '*') {
-            _ = self.readChar() orelse unreachable;
-            return newToken(self.data[pos..self.current_position], .RepeatOp);
-        } else if (char == '\\') {
-            _ = self.readChar() orelse unreachable;
-            _ = self.readChar() orelse return null;
-            return newToken(self.data[pos + 1 .. self.current_position], .EscapedChar);
-        } else {
-            _ = self.readChar() orelse unreachable;
-            return newToken(self.data[pos..self.current_position], .Char);
-        }
+    fn next(self: *RegexLexer) ?Token {
+        const char = self.readChar() orelse return null;
+        return newToken(char, kindOf(char));
     }
 };
