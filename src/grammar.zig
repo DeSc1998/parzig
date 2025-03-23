@@ -34,8 +34,8 @@ pub fn RuleMap(comptime Grammar: type) StringMap(RuleFrom(RulesEnum(Grammar))) {
     const Map = StringMap(RuleFrom(RulesEnum(Grammar)));
     const info = @typeInfo(Grammar);
     const tmp = Grammar{};
-    var out: [info.Struct.fields.len]struct { []const u8, Rule } = undefined;
-    for (&out, info.Struct.fields) |*entry, field| {
+    var out: [info.@"struct".fields.len]struct { []const u8, Rule } = undefined;
+    for (&out, info.@"struct".fields) |*entry, field| {
         entry.* = .{ field.name, @field(tmp, field.name) };
     }
     return Map.initComptime(out);
@@ -48,24 +48,24 @@ pub fn RuleMap(comptime Grammar: type) StringMap(RuleFrom(RulesEnum(Grammar))) {
 fn isValid(comptime grammar: type) void {
     comptime {
         const info = @typeInfo(grammar);
-        if (info != .Struct) @compileError("The provided grammar must be a struct");
+        if (info != .@"struct") @compileError("The provided grammar must be a struct");
         if (!@hasField(grammar, "root")) @compileError("Grammar has no initial rule called 'root'");
         const inner_info = @typeInfo(RulesEnum(grammar));
-        for (inner_info.Enum.fields) |field| {
+        for (inner_info.@"enum".fields) |field| {
             if (!@hasField(grammar, field.name)) comptimeLog(
                 "declared rule '{s}' does not exist in the grammar",
                 .{field.name},
             );
         }
-        for (info.Struct.fields) |field| {
+        for (info.@"struct".fields) |field| {
             const type_info = @typeInfo(field.type);
-            if (type_info != .Union) comptimeLog(
+            if (type_info != .@"union") comptimeLog(
                 "rule '{s}' is not a union type from 'fn RuleFrom(Enum)'",
                 .{field.name},
             );
             const Tmp = RuleFrom(@Type(inner_info));
-            const tmp_info = @typeInfo(Tmp).Union;
-            for (type_info.Union.fields, tmp_info.fields) |act, exp| {
+            const tmp_info = @typeInfo(Tmp).@"union";
+            for (type_info.@"union".fields, tmp_info.fields) |act, exp| {
                 if (!std.mem.eql(u8, act.name, exp.name)) comptimeLog(
                     "in rule '{s}': fields '{s}' and '{s}' differ. Please use 'fn RuleFrom(Enum)'",
                     .{ field.name, act.name, exp.name },

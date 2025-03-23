@@ -1,7 +1,8 @@
 .{
-    .name = "parzig",
+    .name = .parzig,
     .version = "0.0.0",
     .dependencies = .{},
+    .fingerprint = 0xe10b531bc19260d4,
 
     .paths = .{
         "build.zig",
