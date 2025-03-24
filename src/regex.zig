@@ -49,6 +49,7 @@ fn errorToMessage(err: Error) []const u8 {
 
 const TokenKind = enum {
     Char,
+    AnyChar,
     EscapedChar,
 
     OpenSequence,
@@ -69,6 +70,7 @@ const Token = struct {
 
 const RegexExpression = union(enum) {
     char: u8,
+    any_char: u8,
     range: struct { start: u8, end: u8 },
     seq: []const RegexExpression,
     choice: []const RegexExpression,
@@ -121,6 +123,9 @@ const RegexParser = struct {
     fn parse(self: *RegexParser) Error!RegexExpression {
         const token = self.lexer.next() orelse return Error.EndOfRegex;
         switch (token.kind) {
+            .AnyChar => {
+                return .{ .any_char = 0 };
+            },
             .Char => {
                 return .{ .char = token.char };
             },
@@ -191,6 +196,7 @@ const RegexParser = struct {
     fn matchesWhitespace(expr: RegexExpression) bool {
         return switch (expr) {
             .char => |c| std.ascii.isWhitespace(c),
+            .any_char => true,
             .choice => |cs| b: {
                 for (cs) |c| {
                     if (matchesWhitespace(c)) {
@@ -226,8 +232,11 @@ const RegexParser = struct {
         var current_index: usize = 0;
         if (source.len == 0) return Error.EndOfInput;
         switch (expr) {
+            .any_char => {
+                return current_index + 1;
+            },
             .char => |c| {
-                if (std.mem.containsAtLeast(u8, "()*", 1, &.{c})) std.log.info("char = {c}, source = '{s}'", .{ c, source });
+                // if (std.mem.containsAtLeast(u8, "()*", 1, &.{c})) std.log.info("char = {c}, source = '{s}'", .{ c, source });
                 return if (source[current_index] == c) current_index + 1 else Error.CharacterMissmatch;
             },
             .range => |r| {
@@ -314,6 +323,7 @@ const RegexLexer = struct {
             '+' => .RepeatPlusOp,
             '-' => .RangeMinus,
             '\\' => .EscapedChar,
+            '.' => .AnyChar,
             else => .Char,
         };
     }
