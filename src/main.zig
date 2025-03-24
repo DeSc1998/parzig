@@ -8,12 +8,16 @@ const TestParser = parser.Parser(G);
 const M = @import("MathGrammar.zig");
 const MathParser = parser.Parser(M);
 
+const R = @import("InnerRegexGrammar.zig");
+const RegexParser = parser.Parser(R);
+
 var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 const allocator = arena.allocator();
 
 pub fn main() !void {
     try testExample();
     try mathExample();
+    try innerRegexExample();
 }
 
 fn testExample() !void {
@@ -38,6 +42,23 @@ fn mathExample() !void {
     const source = try allocator.dupe(u8, "15 + (7 - (0 * 23) ^ 4)");
     errdefer allocator.free(source);
     var p = MathParser.init(allocator, source);
+    const tree = p.parse() catch |err| {
+        std.log.err("{}", .{err});
+        try p.printErrorContext();
+        arena.deinit();
+        std.process.exit(1);
+    };
+    defer tree.deinit();
+    const stdout = std.io.getStdOut().writer();
+    try tree.dumpTo(stdout.any());
+    std.log.info("rest of input: {s}", .{p.unparsed()});
+}
+
+fn innerRegexExample() !void {
+    std.log.info("running inner regex example", .{});
+    const source = try allocator.dupe(u8, "test *[(aoeu)1234{a-z}]");
+    errdefer allocator.free(source);
+    var p = RegexParser.init(allocator, source);
     const tree = p.parse() catch |err| {
         std.log.err("{}", .{err});
         try p.printErrorContext();
