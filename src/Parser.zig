@@ -52,6 +52,48 @@ pub const Tree = struct {
         const n = self.nodes[node_index];
         return self.source[n.start_index..n.end_index];
     }
+
+    pub fn dumpTo(self: Tree, out: std.io.AnyWriter) !void {
+        const root = self.nodes[self.root];
+        for (root.children) |child| {
+            try self.dumpNodeTo(child, out, 1);
+        }
+    }
+    pub fn dumpNodeTo(self: Tree, index: usize, out: std.io.AnyWriter, indent_level: usize) !void {
+        var buffer: [512]u8 = undefined;
+        const indent_chars = try indent(&buffer, 2, indent_level);
+        const n = self.node(index);
+        const cs = self.chars(index);
+        if (isBuildinNode(n.kind)) {
+            try out.print("{s}{s}\n", .{ indent_chars, n.kind });
+        } else {
+            try out.print("{s}{s}: {s}\n", .{ indent_chars, n.kind, cs });
+        }
+        for (n.children) |child| {
+            try self.dumpNodeTo(child, out, indent_level + 1);
+        }
+    }
+
+    fn indent(out: []u8, space_count: usize, level: usize) ![]const u8 {
+        var tmp = level;
+        if (level * space_count > out.len) return error.NotEnoughSpaceInTmpBuffer;
+
+        while (tmp > 0) {
+            for (0..space_count) |index| {
+                out[tmp * space_count + index] = ' ';
+            }
+            tmp -= 1;
+        }
+        return out[0 .. level * space_count];
+    }
+
+    fn isBuildinNode(cs: []const u8) bool {
+        const types: []const []const u8 = &.{ "repeat", "sequence" };
+        for (types) |t| {
+            if (std.mem.eql(u8, cs, t)) return true;
+        }
+        return false;
+    }
 };
 
 const ErrorContext = struct {
@@ -75,6 +117,7 @@ pub fn Parser(comptime Grammar: type) type {
         rule_map: gram.StringMap(RuleType),
         current_position: usize = 0,
         node_buffer: std.ArrayList(Node),
+        with_debug: bool = false,
 
         var context: ?ErrorContext = null;
 
@@ -85,6 +128,16 @@ pub fn Parser(comptime Grammar: type) type {
                 .source = source,
                 .node_buffer = std.ArrayList(Node).init(allocator),
                 .rule_map = comptime gram.RuleMap(Grammar),
+            };
+        }
+
+        pub fn initDebug(allocator: std.mem.Allocator, source: []const u8) Self {
+            return .{
+                .allocator = allocator,
+                .source = source,
+                .node_buffer = std.ArrayList(Node).init(allocator),
+                .rule_map = comptime gram.RuleMap(Grammar),
+                .with_debug = true,
             };
         }
 
@@ -225,8 +278,10 @@ pub fn Parser(comptime Grammar: type) type {
         fn parseRegex(self: *Self, expr: []const u8) Error!usize {
             switch (regex.match(expr, self.source[self.current_position..])) {
                 .succes => |out| {
-                    std.log.info("matched expression '{s}'", .{expr});
-                    std.log.info("result is '{s}'", .{out.match});
+                    if (self.with_debug) {
+                        std.log.info("matched expression '{s}'", .{expr});
+                        std.log.info("result is '{s}'", .{out.match});
+                    }
                     const node: Node = .{
                         .kind = "regex",
                         .allocator = self.allocator,
@@ -239,9 +294,11 @@ pub fn Parser(comptime Grammar: type) type {
                     return index;
                 },
                 .failure => |f| {
-                    std.log.info("current source offset: {}", .{self.current_position});
-                    std.log.info("regex was: '{s}'", .{expr});
-                    std.log.info("message was: '{s}'", .{f.message});
+                    if (self.with_debug) {
+                        std.log.info("current source offset: {}", .{self.current_position});
+                        std.log.info("regex was: '{s}'", .{expr});
+                        std.log.info("message was: '{s}'", .{f.message});
+                    }
                     context = .{
                         .message = f.message,
                         .node = "",
