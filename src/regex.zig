@@ -4,7 +4,10 @@ var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 const allocator = arena.allocator();
 
 const RegexMatch = union(enum) {
-    succes: []const u8,
+    succes: struct {
+        consumed: usize,
+        match: []const u8,
+    },
     failure: struct {
         source_offset: usize,
         regex_offset: usize,
@@ -24,7 +27,10 @@ pub fn match(regex: []const u8, source: []const u8) RegexMatch {
             .message = errorToMessage(err),
         } };
     };
-    return RegexMatch{ .succes = chars };
+    return RegexMatch{ .succes = .{
+        .consumed = parser.current_index,
+        .match = chars,
+    } };
 }
 
 fn errorToMessage(err: Error) []const u8 {
@@ -84,6 +90,7 @@ const Error = error{
 const RegexParser = struct {
     current_index: usize = 0,
     lexer: RegexLexer,
+    expression_start: usize = 0,
 
     fn init(data: []const u8) RegexParser {
         return .{ .lexer = RegexLexer.init(data) };
@@ -177,9 +184,8 @@ const RegexParser = struct {
         while (self.parse()) |expr| {
             const consumed = try self.consumeExpr(expr, source[self.current_index..]);
             self.current_index += consumed;
-            if (self.current_index < source.len) std.log.info("source = {s}", .{source[self.current_index..]});
         } else |err| if (err != Error.EndOfRegex) return err;
-        return source[0..self.current_index];
+        return source[self.expression_start..self.current_index];
     }
 
     fn matchesWhitespace(expr: RegexExpression) bool {
@@ -208,6 +214,7 @@ const RegexParser = struct {
             while (source.len > self.current_index and std.ascii.isWhitespace(source[self.current_index])) {
                 self.current_index += 1;
             }
+            self.expression_start = self.current_index;
         }
     }
 

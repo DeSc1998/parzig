@@ -93,9 +93,7 @@ pub fn Parser(comptime Grammar: type) type {
         /// NOTE: If the parser encounters a whitespace which is not handled
         /// by the currently reachable grammar rules then it is ignored.
         pub fn parse(self: *Self) Error!Tree {
-            const out = self.parseNode("root") catch |err| {
-                return err;
-            };
+            const out = try self.parseNode("root");
             return .{
                 .allocator = self.allocator,
                 .root = out,
@@ -215,20 +213,8 @@ pub fn Parser(comptime Grammar: type) type {
                     return index;
                 },
                 .choice => |rules| {
-                    var buffer = std.ArrayList(usize).init(self.allocator);
                     for (rules) |rule| {
-                        const parsed_index = self.parseSubrule(rule) catch continue;
-                        try buffer.append(parsed_index);
-                        const seq_node: Node = .{
-                            .kind = "choice",
-                            .allocator = self.allocator,
-                            .children = try buffer.toOwnedSlice(),
-                            .start_index = pos,
-                            .end_index = self.current_position,
-                        };
-                        const index = self.node_buffer.items.len;
-                        try self.node_buffer.append(seq_node);
-                        return index;
+                        return self.parseSubrule(rule) catch continue;
                     }
                     return Error.RegexMatch;
                 },
@@ -239,18 +225,23 @@ pub fn Parser(comptime Grammar: type) type {
         fn parseRegex(self: *Self, expr: []const u8) Error!usize {
             switch (regex.match(expr, self.source[self.current_position..])) {
                 .succes => |out| {
+                    std.log.info("matched expression '{s}'", .{expr});
+                    std.log.info("result is '{s}'", .{out.match});
                     const node: Node = .{
                         .kind = "regex",
                         .allocator = self.allocator,
-                        .start_index = self.current_position,
-                        .end_index = self.current_position + out.len,
+                        .start_index = self.current_position + out.consumed - out.match.len,
+                        .end_index = self.current_position + out.consumed,
                     };
-                    self.current_position += out.len;
+                    self.current_position += out.consumed;
                     const index = self.node_buffer.items.len;
                     try self.node_buffer.append(node);
                     return index;
                 },
                 .failure => |f| {
+                    std.log.info("current source offset: {}", .{self.current_position});
+                    std.log.info("regex was: '{s}'", .{expr});
+                    std.log.info("message was: '{s}'", .{f.message});
                     context = .{
                         .message = f.message,
                         .node = "",
