@@ -6,6 +6,7 @@ const regex = @import("regex.zig");
 const Error = error{
     NotImplemented,
     RegexMatch,
+    ChoiceMismatch,
     EndOfInput,
 } || std.mem.Allocator.Error;
 
@@ -118,6 +119,7 @@ pub fn Parser(comptime Grammar: type) type {
         current_position: usize = 0,
         node_buffer: std.ArrayList(Node),
         with_debug: bool = false,
+        ignores_whitespace: bool,
 
         var context: ?ErrorContext = null;
 
@@ -128,6 +130,7 @@ pub fn Parser(comptime Grammar: type) type {
                 .source = source,
                 .node_buffer = std.ArrayList(Node).init(allocator),
                 .rule_map = comptime gram.RuleMap(Grammar),
+                .ignores_whitespace = gram.shouldIgnoreWhitespace(Grammar),
             };
         }
 
@@ -137,6 +140,7 @@ pub fn Parser(comptime Grammar: type) type {
                 .source = source,
                 .node_buffer = std.ArrayList(Node).init(allocator),
                 .rule_map = comptime gram.RuleMap(Grammar),
+                .ignores_whitespace = gram.shouldIgnoreWhitespace(Grammar),
                 .with_debug = true,
             };
         }
@@ -232,21 +236,19 @@ pub fn Parser(comptime Grammar: type) type {
                             try buffer.append(tmp_index);
                         }
                     } else |err| {
-                        switch (err) {
-                            Error.EndOfInput, Error.RegexMatch => {
-                                const repeat_node: Node = .{
-                                    .kind = "repeat",
-                                    .allocator = self.allocator,
-                                    .children = try buffer.toOwnedSlice(),
-                                    .start_index = pos,
-                                    .end_index = self.current_position,
-                                };
-                                const repeat_index = self.node_buffer.items.len;
-                                try self.node_buffer.append(repeat_node);
-                                return repeat_index;
-                            },
-                            else => return err,
-                        }
+                        if (err == Error.NotImplemented)
+                            return err;
+
+                        const repeat_node: Node = .{
+                            .kind = "repeat",
+                            .allocator = self.allocator,
+                            .children = try buffer.toOwnedSlice(),
+                            .start_index = pos,
+                            .end_index = self.current_position,
+                        };
+                        const repeat_index = self.node_buffer.items.len;
+                        try self.node_buffer.append(repeat_node);
+                        return repeat_index;
                     }
                 },
                 .seq => |rules| {
@@ -266,17 +268,30 @@ pub fn Parser(comptime Grammar: type) type {
                     return index;
                 },
                 .choice => |rules| {
+                    var was_end_of_input = true;
                     for (rules) |rule| {
-                        return self.parseSubrule(rule) catch continue;
+                        const index = self.parseSubrule(rule) catch |err| {
+                            if (err == Error.EndOfInput) {
+                                was_end_of_input = was_end_of_input and true;
+                            } else {
+                                was_end_of_input = was_end_of_input and false;
+                            }
+                            continue;
+                        };
+                        return index;
                     }
-                    return Error.RegexMatch;
+                    return if (was_end_of_input) Error.EndOfInput else Error.ChoiceMismatch;
                 },
                 else => unreachable,
             }
         }
 
         fn parseRegex(self: *Self, expr: []const u8) Error!usize {
-            switch (regex.match(expr, self.source[self.current_position..])) {
+            const input = self.source[self.current_position..];
+            if (input.len == 0 and expr.len != 0)
+                return Error.EndOfInput;
+
+            switch (regex.match(expr, input, self.ignores_whitespace)) {
                 .succes => |out| {
                     if (self.with_debug) {
                         std.log.info("matched expression '{s}'", .{expr});
@@ -295,9 +310,11 @@ pub fn Parser(comptime Grammar: type) type {
                 },
                 .failure => |f| {
                     if (self.with_debug) {
+                        const sample = if (input.len >= 10) input[0..10] else input[0..];
                         std.log.info("current source offset: {}", .{self.current_position});
                         std.log.info("regex was: '{s}'", .{expr});
                         std.log.info("message was: '{s}'", .{f.message});
+                        std.log.info("input sample: '{s}'", .{sample});
                     }
                     context = .{
                         .message = f.message,

@@ -9,9 +9,9 @@ pub const Rules = enum {
     any_char,
     escaped_char,
     seq,
-    choice,
-    repeat,
-    repeat_plus,
+    choices,
+    repeats,
+    repeats_plus,
     range,
 };
 
@@ -22,9 +22,9 @@ root: Rule =
 
 expression: Rule = .{ .choice = &[_]Rule{
     .{ .subrule = .seq },
-    .{ .subrule = .choice },
-    .{ .subrule = .repeat },
-    .{ .subrule = .repeat_plus },
+    .{ .subrule = .choices },
+    .{ .subrule = .repeats },
+    .{ .subrule = .repeats_plus },
     .{ .subrule = .range },
     .{ .subrule = .escaped_char },
     .{ .subrule = .any_char },
@@ -39,7 +39,7 @@ seq: Rule = .{ .seq = &[_]Rule{
     .{ .regex = "\\)" },
 } },
 
-choice: Rule = .{ .seq = &[_]Rule{
+choices: Rule = .{ .seq = &[_]Rule{
     .{ .regex = "\\[" },
     .{ .repeat = &[_]Rule{
         .{ .subrule = .expression },
@@ -47,12 +47,12 @@ choice: Rule = .{ .seq = &[_]Rule{
     .{ .regex = "\\]" },
 } },
 
-repeat: Rule = .{ .seq = &[_]Rule{
+repeats: Rule = .{ .seq = &[_]Rule{
     .{ .regex = "\\*" },
     .{ .subrule = .expression },
 } },
 
-repeat_plus: Rule = .{ .seq = &[_]Rule{
+repeats_plus: Rule = .{ .seq = &[_]Rule{
     .{ .regex = "\\+" },
     .{ .subrule = .expression },
 } },

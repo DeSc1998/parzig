@@ -15,12 +15,12 @@ const RegexMatch = union(enum) {
     },
 };
 
-pub fn match(regex: []const u8, source: []const u8) RegexMatch {
+pub fn match(regex: []const u8, source: []const u8, ignore_whitespace: bool) RegexMatch {
     defer if (!arena.reset(.retain_capacity)) {
         _ = arena.reset(.free_all);
     };
     var parser = RegexParser.init(regex);
-    const chars = parser.consume(source) catch |err| {
+    const chars = parser.consume(source, ignore_whitespace) catch |err| {
         return RegexMatch{ .failure = .{
             .source_offset = parser.current_index,
             .regex_offset = parser.lexer.current_position,
@@ -124,7 +124,8 @@ const RegexParser = struct {
         const token = self.lexer.next() orelse return Error.EndOfRegex;
         switch (token.kind) {
             .AnyChar => {
-                return .{ .any_char = 0 };
+                std.debug.assert(token.char == '.');
+                return .{ .any_char = token.char };
             },
             .Char => {
                 return .{ .char = token.char };
@@ -184,12 +185,15 @@ const RegexParser = struct {
         }
     }
 
-    fn consume(self: *RegexParser, source: []const u8) Error![]const u8 {
-        self.skipWhitespace(source);
+    fn consume(self: *RegexParser, source: []const u8, ignore_whitespace: bool) Error![]const u8 {
+        if (ignore_whitespace)
+            self.skipWhitespace(source);
+
         while (self.parse()) |expr| {
             const consumed = try self.consumeExpr(expr, source[self.current_index..]);
             self.current_index += consumed;
-        } else |err| if (err != Error.EndOfRegex) return err;
+        } else |err| if (err != Error.EndOfRegex and self.lexer.current_position != self.lexer.data.len)
+            return err;
         return source[self.expression_start..self.current_index];
     }
 

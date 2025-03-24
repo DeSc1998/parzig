@@ -56,9 +56,12 @@ fn mathExample() !void {
 
 fn innerRegexExample() !void {
     std.log.info("running inner regex example", .{});
-    const source = try allocator.dupe(u8, "test *[(aoeu)1234{a-z}]");
+    // const source = try allocator.dupe(u8, "test *[(aoeu)1234{a-z}]");
+    const source = try allocator.dupe(u8, "test   [1234{a-z}]*(aoeu) ");
     errdefer allocator.free(source);
+    std.log.info("source is: '{s}'", .{source});
     var p = RegexParser.init(allocator, source);
+    // var p = RegexParser.initDebug(allocator, source);
     const tree = p.parse() catch |err| {
         std.log.err("{}", .{err});
         try p.printErrorContext();
@@ -68,5 +71,9 @@ fn innerRegexExample() !void {
     defer tree.deinit();
     const stdout = std.io.getStdOut().writer();
     try tree.dumpTo(stdout.any());
+    std.log.info("node count: {}", .{tree.nodes.len});
+    // for (0..tree.nodes.len) |index| {
+    //     try tree.dumpNodeTo(index, stdout.any(), 2);
+    // }
     std.log.info("rest of input: {s}", .{p.unparsed()});
 }

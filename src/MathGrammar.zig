@@ -11,6 +11,8 @@ pub const Rules = enum {
     operator,
 };
 
+pub fn ignore_whitespace() void {}
+
 root: Rule = .{ .subrule = .expression },
 
 expression: Rule = .{ .choice = &[_]Rule{

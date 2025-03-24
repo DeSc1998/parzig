@@ -11,6 +11,8 @@ pub const Rules = enum {
     test5,
 };
 
+pub fn ignore_whitespace() void {}
+
 root: Rule = .{ .seq = &[_]Rule{
     .{ .repeat = &[_]Rule{
         .{ .subrule = ._test },

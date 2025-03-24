@@ -41,6 +41,10 @@ pub fn RuleMap(comptime Grammar: type) StringMap(RuleFrom(RulesEnum(Grammar))) {
     return Map.initComptime(out);
 }
 
+pub fn shouldIgnoreWhitespace(comptime Grammar: type) bool {
+    return @hasDecl(Grammar, "ignore_whitespace");
+}
+
 /// Checks if the definitions of `grammar` are sound.
 ///
 /// ex.: Supose we have a grammar with a subrule in a definition which
