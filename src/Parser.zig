@@ -76,7 +76,7 @@ pub const Tree = struct {
 
     fn indent(out: []u8, space_count: usize, level: usize) ![]const u8 {
         var tmp = level;
-        if (level * space_count > out.len) return error.NotEnoughSpaceInTmpBuffer;
+        if (level * space_count >= out.len) return error.NotEnoughSpaceInTmpBuffer;
 
         while (tmp > 0) {
             for (0..space_count) |index| {
