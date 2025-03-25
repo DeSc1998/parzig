@@ -1,15 +1,15 @@
 const std = @import("std");
 
-const parser = @import("Parser.zig");
+const parzig = @import("parzig");
 
 const G = @import("TestGrammar.zig");
-const TestParser = parser.Parser(G);
+const TestParser = parzig.ParserFrom(G);
 
 const M = @import("MathGrammar.zig");
-const MathParser = parser.Parser(M);
+const MathParser = parzig.ParserFrom(M);
 
 const R = @import("InnerRegexGrammar.zig");
-const RegexParser = parser.Parser(R);
+const RegexParser = parzig.ParserFrom(R);
 
 var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 const allocator = arena.allocator();

@@ -1,7 +1,7 @@
 const std = @import("std");
-const grammar = @import("grammar.zig");
+const parzig = @import("parzig");
 
-const Rule = grammar.RuleFrom(Rules);
+const Rule = parzig.RuleFrom(Rules);
 pub const Rules = enum {
     root,
     _test,

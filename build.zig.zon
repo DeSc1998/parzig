@@ -1,6 +1,7 @@
 .{
     .name = .parzig,
     .version = "0.0.0",
+    .minimum_zig_version = "0.14.0",
     .dependencies = .{},
     .fingerprint = 0xe10b531bc19260d4,
 
