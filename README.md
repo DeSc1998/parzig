@@ -99,13 +99,13 @@ const node_chars = tree.source[node.start_index .. node.end_index];
 
 Things you can express in this implementation:
 
-- character: `"a"`
-- escaped character: `"\\+"`
-- repeat any amount: `"*a"`
-- repeat at least once: `"+a"`
-- choice: `"[abc]"`
-- negative choice: `"[^abc]"`
-- character range: `"{a-z}"`
+- character: `a`
+- escaped character: `\\+`
+- repeat any amount: `*a`
+- repeat at least once: `+a`
+- choice: `[abc]`
+- negative choice: `[^abc]`
+- character range: `{a-z}`
 
 > NOTE: the double backslash is nessecary because you escape in a string of zig.
 > If you wish to parse a backslash you need to write `"\\\\"` to match it.
