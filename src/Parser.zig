@@ -68,7 +68,7 @@ pub const Tree = struct {
         if (isBuildinNode(n.kind)) {
             try out.print("{s}{s}\n", .{ indent_chars, n.kind });
         } else {
-            try out.print("{s}{s}: {s}\n", .{ indent_chars, n.kind, cs });
+            try out.print("{s}{s}: '{s}'\n", .{ indent_chars, n.kind, cs });
         }
         for (n.children) |child| {
             try self.dumpNodeTo(child, out, indent_level + 1);
