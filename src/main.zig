@@ -11,6 +11,9 @@ const MathParser = parzig.ParserFrom(M);
 const R = @import("InnerRegexGrammar.zig");
 const RegexParser = parzig.ParserFrom(R);
 
+const Rec = @import("RecursiveGrammar.zig");
+const Recursive = parzig.ParserFrom(Rec);
+
 var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 const allocator = arena.allocator();
 
@@ -18,6 +21,7 @@ pub fn main() !void {
     try testExample();
     try mathExample();
     try innerRegexExample();
+    // try recursiveExample();
 }
 
 fn testExample() !void {
@@ -76,4 +80,10 @@ fn innerRegexExample() !void {
     //     try tree.dumpNodeTo(index, stdout.any(), 2);
     // }
     std.log.info("rest of input: {s}", .{p.unparsed()});
+}
+
+fn recursiveExample() !void {
+    std.log.info("running recursive example", .{});
+    const p = Recursive.init(allocator, "");
+    _ = p;
 }

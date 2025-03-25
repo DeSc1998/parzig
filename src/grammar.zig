@@ -30,6 +30,9 @@ pub fn StringMap(comptime Type: type) type {
 
 pub fn RuleMap(comptime Grammar: type) StringMap(RuleFrom(RulesEnum(Grammar))) {
     isValid(Grammar);
+    if (isLeftRecursive(Grammar)) {
+        @compileError("the provided grammar is left recursive");
+    }
     const Rule = RuleFrom(RulesEnum(Grammar));
     const Map = StringMap(RuleFrom(RulesEnum(Grammar)));
     const info = @typeInfo(Grammar);
@@ -79,8 +82,48 @@ fn isValid(comptime grammar: type) void {
     }
 }
 
-/// fails to compile if the grammar is left-recursive
-fn isLeftRecursive(comptime grammar: type) void {
-    _ = grammar;
-    comptimeLog("TODO: implement 'isLeftRecursive'", .{});
+fn firstRuleOf(comptime grammar: type, rule: RuleFrom(RulesEnum(grammar))) []const RuleFrom(RulesEnum(grammar)) {
+    return comptime switch (rule) {
+        .subrule, .regex => &.{rule},
+        .repeat => |rules| if (rules.len > 0) firstRuleOf(grammar, rules[0]) else &.{},
+        .seq => |rules| if (rules.len > 0) firstRuleOf(grammar, rules[0]) else &.{},
+        .choice => |rules| b: {
+            // TODO: if the choice is deeply nested with choices this is not accurate
+            var tmp: [rules.len]@TypeOf(rule) = undefined;
+            for (&tmp, rules) |*out, r| {
+                const t = firstRuleOf(grammar, r);
+                if (t.len > 0) {
+                    out.* = t[0];
+                }
+            }
+            break :b &tmp;
+        },
+    };
+}
+
+/// Fails to compile if the grammar is left-recursive.
+/// It is assumed that `grammar` has been validated with `fn isValid`.
+fn isLeftRecursive(comptime grammar: type) bool {
+    const rules_info = @typeInfo(RulesEnum(grammar));
+    const g = grammar{};
+    var seen: [rules_info.@"enum".fields.len + 1]RulesEnum(grammar) = undefined;
+    seen[0] = .root;
+    var seen_size: usize = 1;
+    var current_index: usize = 0;
+    while (current_index < seen.len and !(current_index >= seen_size)) : (current_index += 1) {
+        const current_rule = seen[current_index];
+        const current_seen_size = seen_size;
+        const first = firstRuleOf(grammar, @field(g, @tagName(current_rule)));
+        for (first) |r| {
+            const e = if (r == .subrule) r.subrule else continue;
+            if (std.mem.containsAtLeast(RulesEnum(grammar), seen[0..current_seen_size], 1, &.{e})) {
+                comptimeLog("left recursion detected in rule '{s}'", .{@tagName(current_rule)});
+            }
+            if (!std.mem.containsAtLeast(RulesEnum(grammar), seen[0..seen_size], 1, &.{e})) {
+                seen[seen_size] = e;
+                seen_size += 1;
+            }
+        }
+    }
+    return false;
 }
