@@ -37,6 +37,20 @@ const Parser = parzig.ParserFrom(@import("path/to/grammar.zig"));
 
 This grammar just tries to match the internal regex `""`.
 
+## Addional Options
+
+Currently there is only one option available.
+
+### ignore whitespace
+
+Add following function definition to your grammar file:
+
+> NOTE: The signiture can be what ever you want.
+
+```zig
+pub fn ignore_whitespace() void {}
+```
+
 ## Walking the Tree
 
 Available functions of the parsed tree:
