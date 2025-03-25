@@ -30,7 +30,7 @@ expression: Rule = .{ .choice = &[_]Rule{
     } },
 } },
 
-operator: Rule = .{ .regex = "[\\-/\\*\\+^]" },
+operator: Rule = .{ .regex = "[\\-/\\*\\+\\^]" },
 
 value: Rule = .{ .choice = &[_]Rule{
     .{ .subrule = .identifier },

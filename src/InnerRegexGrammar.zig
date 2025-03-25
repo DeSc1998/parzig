@@ -10,6 +10,7 @@ pub const Rules = enum {
     escaped_char,
     seq,
     choices,
+    choices_neg,
     repeats,
     repeats_plus,
     range,
@@ -41,10 +42,16 @@ seq: Rule = .{ .seq = &[_]Rule{
 
 choices: Rule = .{ .seq = &[_]Rule{
     .{ .regex = "\\[" },
+    .{ .subrule = .choices_neg },
     .{ .repeat = &[_]Rule{
         .{ .subrule = .expression },
     } },
     .{ .regex = "\\]" },
+} },
+
+choices_neg: Rule = .{ .choice = &[_]Rule{
+    .{ .regex = "^" },
+    .{ .regex = "" },
 } },
 
 repeats: Rule = .{ .seq = &[_]Rule{
@@ -67,4 +74,4 @@ range: Rule = .{ .seq = &[_]Rule{
 
 escaped_char: Rule = .{ .regex = "\\\\." },
 any_char: Rule = .{ .regex = "\\." },
-char: Rule = .{ .regex = "." },
+char: Rule = .{ .regex = "[^\\)\\]\\}]" },

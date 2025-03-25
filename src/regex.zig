@@ -58,6 +58,7 @@ const TokenKind = enum {
     RangeMinus,
     CloseRange,
     OpenChoice,
+    NegativeChoice,
     CloseChoice,
     RepeatOp,
     RepeatPlusOp,
@@ -74,6 +75,7 @@ const RegexExpression = union(enum) {
     range: struct { start: u8, end: u8 },
     seq: []const RegexExpression,
     choice: []const RegexExpression,
+    choice_neg: []const RegexExpression,
     repeat: *const RegexExpression,
     repeat_plus: *const RegexExpression,
 };
@@ -140,9 +142,14 @@ const RegexParser = struct {
                 return out;
             },
             .OpenChoice => {
+                const neg = self.expect(.NegativeChoice);
                 const out = try self.parseChoice();
                 _ = try self.expect(.CloseChoice);
-                return out;
+                if (neg) |_| {
+                    return .{ .choice_neg = out.choice };
+                } else |_| {
+                    return out;
+                }
             },
             .OpenRange => {
                 const start = try self.expect(.Char);
@@ -209,6 +216,14 @@ const RegexParser = struct {
                 }
                 break :b false;
             },
+            .choice_neg => |cs| b: {
+                for (cs) |c| {
+                    if (matchesWhitespace(c)) {
+                        break :b false;
+                    }
+                }
+                break :b true;
+            },
             .range => false, // TODO: proper checking for ranges
             .seq => |cs| cs.len > 0 and matchesWhitespace(cs[0]),
             .repeat => |c| matchesWhitespace(c.*),
@@ -262,6 +277,13 @@ const RegexParser = struct {
                     break;
                 }
                 return if (current_index != 0) current_index else Error.CharacterMissmatchChoice;
+            },
+            .choice_neg => |exprs| {
+                for (exprs) |e| {
+                    _ = self.consumeExpr(e, source[current_index..]) catch continue;
+                    return Error.CharacterMissmatchChoice;
+                }
+                return current_index + 1;
             },
             .repeat => |e| {
                 while (self.consumeExpr(e.*, source[current_index..])) |consumed| {
@@ -326,6 +348,7 @@ const RegexLexer = struct {
             '*' => .RepeatOp,
             '+' => .RepeatPlusOp,
             '-' => .RangeMinus,
+            '^' => .NegativeChoice,
             '\\' => .EscapedChar,
             '.' => .AnyChar,
             else => .Char,
