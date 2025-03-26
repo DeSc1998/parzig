@@ -15,10 +15,11 @@ pub const Node = struct {
     kind: []const u8,
     start_index: usize,
     end_index: usize,
-
     children: []const usize = ([0]usize{})[0..],
 
-    pub fn deinit(self: Node) void {
+    const Self = @This();
+
+    pub fn deinit(self: Self) void {
         self.allocator.free(self.children);
     }
 };
@@ -29,7 +30,9 @@ pub const Tree = struct {
     source: []const u8,
     nodes: []const Node,
 
-    pub fn deinit(self: Tree) void {
+    const Self = @This();
+
+    pub fn deinit(self: Self) void {
         self.allocator.free(self.source);
         for (self.nodes) |n| {
             n.deinit();
@@ -37,30 +40,30 @@ pub const Tree = struct {
         self.allocator.free(self.nodes);
     }
 
-    pub fn node(self: Tree, node_index: usize) Node {
+    pub fn node(self: Self, node_index: usize) Node {
         return self.nodes[node_index];
     }
 
-    pub fn nodeKind(self: Tree, node_index: usize) []const u8 {
+    pub fn nodeKind(self: Self, node_index: usize) []const u8 {
         return self.nodes[node_index].kind;
     }
 
-    pub fn children(self: Tree, node_index: usize) []const usize {
+    pub fn children(self: Self, node_index: usize) []const usize {
         return self.nodes[node_index].children;
     }
 
-    pub fn chars(self: Tree, node_index: usize) []const u8 {
+    pub fn chars(self: Self, node_index: usize) []const u8 {
         const n = self.nodes[node_index];
         return self.source[n.start_index..n.end_index];
     }
 
-    pub fn dumpTo(self: Tree, out: std.io.AnyWriter) !void {
+    pub fn dumpTo(self: Self, out: std.io.AnyWriter) !void {
         const root = self.nodes[self.root];
         for (root.children) |child| {
             try self.dumpNodeTo(child, out, 1);
         }
     }
-    pub fn dumpNodeTo(self: Tree, index: usize, out: std.io.AnyWriter, indent_level: usize) !void {
+    pub fn dumpNodeTo(self: Self, index: usize, out: std.io.AnyWriter, indent_level: usize) !void {
         var buffer: [512]u8 = undefined;
         const indent_chars = try indent(&buffer, 2, indent_level);
         const n = self.node(index);
@@ -110,6 +113,7 @@ pub fn Parser(comptime Grammar: type) type {
     return struct {
         const RuleType = gram.RuleType(Grammar);
         const RuleEnum: type = gram.RulesEnum(Grammar);
+        const NodeKind: type = gram.ParserNodeKind(Grammar);
 
         const Self = Parser(Grammar);
 
