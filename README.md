@@ -108,4 +108,4 @@ Things you can express in this implementation:
 - character range: `{a-z}`
 
 > NOTE: the double backslash is nessecary because you escape in a string of zig.
-> If you wish to parse a backslash you need to write `"\\\\"` to match it.
+> If you wish to parse a backslash you need to write `\\\\` to match it.
