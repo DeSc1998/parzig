@@ -136,7 +136,10 @@ fn isLeftRecursive(comptime grammar: type) bool {
         const first = firstRuleOf(grammar, @field(g, @tagName(current_rule)));
         for (first) |e| {
             if (std.mem.containsAtLeast(RulesEnum(grammar), seen[0..current_seen_size], 1, &.{e})) {
-                comptimeLog("left recursion detected in rule '{s}'", .{@tagName(current_rule)});
+                comptimeLog(
+                    "left recursion detected in rule '{s}': recursion starts with '{s}'",
+                    .{ @tagName(current_rule), @tagName(e) },
+                );
             }
             if (!std.mem.containsAtLeast(RulesEnum(grammar), seen[0..seen_size], 1, &.{e})) {
                 seen[seen_size] = e;
