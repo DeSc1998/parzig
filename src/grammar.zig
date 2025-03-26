@@ -82,21 +82,41 @@ fn isValid(comptime grammar: type) void {
     }
 }
 
-fn firstRuleOf(comptime grammar: type, rule: RuleFrom(RulesEnum(grammar))) []const RuleFrom(RulesEnum(grammar)) {
+fn concatUnique(
+    comptime grammar: type,
+    left: []const RulesEnum(grammar),
+    right: []const RulesEnum(grammar),
+) []const RulesEnum(grammar) {
+    const max_rule_count = @typeInfo(RulesEnum(grammar)).@"enum".fields.len;
+    var out: [max_rule_count]RulesEnum(grammar) = undefined;
+    for (out[0..left.len], left) |*tmp, l| {
+        tmp.* = l;
+    }
+
+    var index: usize = left.len;
+    for (right) |r| {
+        if (!std.mem.containsAtLeast(RulesEnum(grammar), out[0..left.len], 1, &.{r})) {
+            out[index] = r;
+            index += 1;
+        }
+    }
+    return out[0..index];
+}
+
+fn firstRuleOf(comptime grammar: type, rule: RuleFrom(RulesEnum(grammar))) []const RulesEnum(grammar) {
     return comptime switch (rule) {
-        .subrule, .regex => &.{rule},
+        .subrule => |r| &.{r},
+        .regex => &.{},
         .repeat => |rules| if (rules.len > 0) firstRuleOf(grammar, rules[0]) else &.{},
         .seq => |rules| if (rules.len > 0) firstRuleOf(grammar, rules[0]) else &.{},
         .choice => |rules| b: {
             // TODO: if the choice is deeply nested with choices this is not accurate
-            var tmp: [rules.len]@TypeOf(rule) = undefined;
-            for (&tmp, rules) |*out, r| {
+            var tmp: []const RulesEnum(grammar) = &.{};
+            for (rules) |r| {
                 const t = firstRuleOf(grammar, r);
-                if (t.len > 0) {
-                    out.* = t[0];
-                }
+                tmp = concatUnique(grammar, tmp, t);
             }
-            break :b &tmp;
+            break :b tmp;
         },
     };
 }
@@ -114,8 +134,7 @@ fn isLeftRecursive(comptime grammar: type) bool {
         const current_rule = seen[current_index];
         const current_seen_size = seen_size;
         const first = firstRuleOf(grammar, @field(g, @tagName(current_rule)));
-        for (first) |r| {
-            const e = if (r == .subrule) r.subrule else continue;
+        for (first) |e| {
             if (std.mem.containsAtLeast(RulesEnum(grammar), seen[0..current_seen_size], 1, &.{e})) {
                 comptimeLog("left recursion detected in rule '{s}'", .{@tagName(current_rule)});
             }
