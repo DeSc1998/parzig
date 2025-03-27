@@ -49,7 +49,8 @@ pub fn config() parzig.Config {
 
 ### Available Options
 
-- `ignore_whitespace`: `bool` (default: false)
+- `ignore_whitespace`: `bool` (default: false)\
+if not used in regex whitespace will be ignored if true
 
 ## Walking the Tree
 
