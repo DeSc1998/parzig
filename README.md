@@ -62,7 +62,7 @@ const Tree = struct {
     // recive the node of `node_index`
     fn node(self: Tree, node_index: usize) Node;
     // recive the kind of `node_index`
-    fn nodeKind(self: Tree, node_index: usize) []const u8;
+    fn nodeKind(self: Tree, node_index: usize) enum { ... };
     // recive the children of `node_index`
     fn children(self: Tree, node_index: usize) []const usize;
     // recive the matched characters of `node_index`
@@ -75,12 +75,15 @@ const Tree = struct {
 };
 
 const Node = struct {
-    kind: []const u8, // string representation of the enum value, 'sequence', 'repeat' or 'regex'
+    kind: enum { ... },
     start_index: usize,
     end_index: usize,
     children: []const usize,
 };
 ```
+
+> NOTE: The node kind enum is constructed from the rules enum you define for your grammar.
+> The values `repeat`, `sequence` and `regex` are added during comptime.
 
 The functions `node`, `nodeKind`, `children` and `chars` are provided for easy access but are not
 nessecary to be used. \
