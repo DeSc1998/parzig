@@ -10,95 +10,92 @@ const Error = error{
     EndOfInput,
 } || std.mem.Allocator.Error;
 
-pub const Node = struct {
-    allocator: std.mem.Allocator,
-    kind: []const u8,
-    start_index: usize,
-    end_index: usize,
-    children: []const usize = ([0]usize{})[0..],
+fn NodeFrom(comptime Enum: type) type {
+    return struct {
+        allocator: std.mem.Allocator,
+        kind: Enum,
+        start_index: usize,
+        end_index: usize,
+        children: []const usize = ([0]usize{})[0..],
 
-    const Self = @This();
+        const Self = @This();
 
-    pub fn deinit(self: Self) void {
-        self.allocator.free(self.children);
-    }
-};
-
-pub const Tree = struct {
-    allocator: std.mem.Allocator,
-    root: usize,
-    source: []const u8,
-    nodes: []const Node,
-
-    const Self = @This();
-
-    pub fn deinit(self: Self) void {
-        self.allocator.free(self.source);
-        for (self.nodes) |n| {
-            n.deinit();
+        pub fn deinit(self: Self) void {
+            self.allocator.free(self.children);
         }
-        self.allocator.free(self.nodes);
-    }
+    };
+}
 
-    pub fn node(self: Self, node_index: usize) Node {
-        return self.nodes[node_index];
-    }
+fn TreeFrom(comptime Enum: type) type {
+    return struct {
+        allocator: std.mem.Allocator,
+        root: usize,
+        source: []const u8,
+        nodes: []const Node,
 
-    pub fn nodeKind(self: Self, node_index: usize) []const u8 {
-        return self.nodes[node_index].kind;
-    }
+        const Self = @This();
+        const Node = NodeFrom(Enum);
 
-    pub fn children(self: Self, node_index: usize) []const usize {
-        return self.nodes[node_index].children;
-    }
-
-    pub fn chars(self: Self, node_index: usize) []const u8 {
-        const n = self.nodes[node_index];
-        return self.source[n.start_index..n.end_index];
-    }
-
-    pub fn dumpTo(self: Self, out: std.io.AnyWriter) !void {
-        const root = self.nodes[self.root];
-        for (root.children) |child| {
-            try self.dumpNodeTo(child, out, 1);
-        }
-    }
-    pub fn dumpNodeTo(self: Self, index: usize, out: std.io.AnyWriter, indent_level: usize) !void {
-        var buffer: [512]u8 = undefined;
-        const indent_chars = try indent(&buffer, 2, indent_level);
-        const n = self.node(index);
-        const cs = self.chars(index);
-        if (isBuildinNode(n.kind)) {
-            try out.print("{s}{s}\n", .{ indent_chars, n.kind });
-        } else {
-            try out.print("{s}{s}: '{s}'\n", .{ indent_chars, n.kind, cs });
-        }
-        for (n.children) |child| {
-            try self.dumpNodeTo(child, out, indent_level + 1);
-        }
-    }
-
-    fn indent(out: []u8, space_count: usize, level: usize) ![]const u8 {
-        var tmp = level;
-        if (level * space_count >= out.len) return error.NotEnoughSpaceInTmpBuffer;
-
-        while (tmp > 0) {
-            for (0..space_count) |index| {
-                out[tmp * space_count + index] = ' ';
+        pub fn deinit(self: Self) void {
+            self.allocator.free(self.source);
+            for (self.nodes) |n| {
+                n.deinit();
             }
-            tmp -= 1;
+            self.allocator.free(self.nodes);
         }
-        return out[0 .. level * space_count];
-    }
 
-    fn isBuildinNode(cs: []const u8) bool {
-        const types: []const []const u8 = &.{ "repeat", "sequence" };
-        for (types) |t| {
-            if (std.mem.eql(u8, cs, t)) return true;
+        pub fn node(self: Self, node_index: usize) Node {
+            return self.nodes[node_index];
         }
-        return false;
-    }
-};
+
+        pub fn nodeKind(self: Self, node_index: usize) Enum {
+            return self.nodes[node_index].kind;
+        }
+
+        pub fn children(self: Self, node_index: usize) []const usize {
+            return self.nodes[node_index].children;
+        }
+
+        pub fn chars(self: Self, node_index: usize) []const u8 {
+            const n = self.nodes[node_index];
+            return self.source[n.start_index..n.end_index];
+        }
+
+        pub fn dumpTo(self: Self, out: std.io.AnyWriter) !void {
+            const root = self.nodes[self.root];
+            for (root.children) |child| {
+                try self.dumpNodeTo(child, out, 1);
+            }
+        }
+        pub fn dumpNodeTo(self: Self, index: usize, out: std.io.AnyWriter, indent_level: usize) !void {
+            var buffer: [512]u8 = undefined;
+            const indent_chars = try indent(&buffer, 2, indent_level);
+            const n = self.node(index);
+            const cs = self.chars(index);
+            if (n.kind == .repeat or n.kind == .sequence) {
+                try out.print("{s}{s}\n", .{ indent_chars, @tagName(n.kind) });
+            } else {
+                try out.print("{s}{s}: '{s}'\n", .{ indent_chars, @tagName(n.kind), cs });
+            }
+            for (n.children) |child| {
+                try self.dumpNodeTo(child, out, indent_level + 1);
+            }
+        }
+
+        fn indent(out: []u8, space_count: usize, level: usize) ![]const u8 {
+            var tmp = level;
+            if (level * space_count >= out.len) return error.NotEnoughSpaceInTmpBuffer;
+
+            while (tmp > 0) {
+                for (0..space_count) |index| {
+                    out[tmp * space_count + index] = ' ';
+                }
+                tmp -= 1;
+            }
+            return out[0 .. level * space_count];
+        }
+    };
+}
 
 const ErrorContext = struct {
     message: []const u8,
@@ -113,7 +110,10 @@ pub fn Parser(comptime Grammar: type) type {
     return struct {
         const RuleType = gram.RuleType(Grammar);
         const RuleEnum: type = gram.RulesEnum(Grammar);
-        const NodeKind: type = gram.ParserNodeKind(Grammar);
+        pub const NodeKind: type = gram.ParserNodeKind(Grammar);
+
+        pub const Tree = TreeFrom(NodeKind);
+        pub const Node = Tree.Node;
 
         const Self = Parser(Grammar);
 
@@ -154,7 +154,7 @@ pub fn Parser(comptime Grammar: type) type {
         /// NOTE: If the parser encounters a whitespace which is not handled
         /// by the currently reachable grammar rules then it is ignored.
         pub fn parse(self: *Self) Error!Tree {
-            const out = try self.parseNode("root");
+            const out = try self.parseNode(.root);
             return .{
                 .allocator = self.allocator,
                 .root = out,
@@ -171,7 +171,7 @@ pub fn Parser(comptime Grammar: type) type {
             if (context) |c| {
                 const tmp_node: Node = .{
                     .allocator = self.allocator,
-                    .kind = "regex",
+                    .kind = .regex,
                     .start_index = c.source_offset,
                     .end_index = c.source_offset + c.char_count,
                 };
@@ -191,25 +191,25 @@ pub fn Parser(comptime Grammar: type) type {
             }
         }
 
-        fn parseNode(self: *Self, kind: []const u8) Error!usize {
-            const rule = self.rule_map.get(kind) orelse unreachable;
+        fn parseNode(self: *Self, kind: Self.RuleEnum) Error!usize {
+            const rule = self.rule_map.get(@tagName(kind)) orelse unreachable;
             const pos = self.current_position;
             var out = std.ArrayList(usize).init(self.allocator);
             const index = switch (rule) {
                 .regex => |expr| self.parseRegex(expr),
-                .subrule => |subrule| self.parseNode(@tagName(subrule)),
+                .subrule => |subrule| self.parseNode(subrule),
                 .choice, .seq, .repeat => self.parseBuildin(rule),
             } catch |err| {
                 if (context) |*c| {
                     if (c.node.len == 0)
-                        c.node = kind;
+                        c.node = @tagName(kind);
                 }
                 return err;
             };
             try out.append(index);
             const node: Node = .{
                 .allocator = self.allocator,
-                .kind = kind,
+                .kind = @enumFromInt(@intFromEnum(kind)),
                 .children = try out.toOwnedSlice(),
                 .start_index = pos,
                 .end_index = self.current_position,
@@ -221,7 +221,7 @@ pub fn Parser(comptime Grammar: type) type {
 
         fn parseSubrule(self: *Self, subrule: Self.RuleType) Error!usize {
             return switch (subrule) {
-                .subrule => |r| self.parseNode(@tagName(r)),
+                .subrule => |r| self.parseNode(r),
                 .seq, .choice, .repeat => self.parseBuildin(subrule),
                 .regex => |r| self.parseRegex(r),
             };
@@ -244,7 +244,7 @@ pub fn Parser(comptime Grammar: type) type {
                             return err;
 
                         const repeat_node: Node = .{
-                            .kind = "repeat",
+                            .kind = .repeat,
                             .allocator = self.allocator,
                             .children = try buffer.toOwnedSlice(),
                             .start_index = pos,
@@ -261,7 +261,7 @@ pub fn Parser(comptime Grammar: type) type {
                         try buffer.append(try self.parseSubrule(rule));
                     }
                     const seq_node: Node = .{
-                        .kind = "sequence",
+                        .kind = .sequence,
                         .allocator = self.allocator,
                         .children = try buffer.toOwnedSlice(),
                         .start_index = pos,
@@ -302,7 +302,7 @@ pub fn Parser(comptime Grammar: type) type {
                         std.log.info("result is '{s}'", .{out.match});
                     }
                     const node: Node = .{
-                        .kind = "regex",
+                        .kind = .regex,
                         .allocator = self.allocator,
                         .start_index = self.current_position + out.consumed - out.match.len,
                         .end_index = self.current_position + out.consumed,

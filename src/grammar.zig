@@ -44,6 +44,37 @@ pub fn RuleMap(comptime Grammar: type) StringMap(RuleFrom(RulesEnum(Grammar))) {
     return Map.initComptime(out);
 }
 
+pub fn ParserNodeKind(comptime Grammar: type) type {
+    const info = @typeInfo(RulesEnum(Grammar)).@"enum";
+    const fields = info.fields;
+    const count = fields.len;
+    const EnumEntry = std.builtin.Type.EnumField;
+    var out_fields: [count + 3]EnumEntry = undefined;
+    @memcpy(out_fields[0..count], fields);
+    out_fields[count] = EnumEntry{
+        .name = "regex",
+        .value = count,
+    };
+    out_fields[count + 1] = EnumEntry{
+        .name = "repeat",
+        .value = count + 1,
+    };
+    out_fields[count + 2] = EnumEntry{
+        .name = "sequence",
+        .value = count + 2,
+    };
+    const int_info = @typeInfo(info.tag_type).int;
+    return @Type(std.builtin.Type{ .@"enum" = .{
+        .tag_type = @Type(std.builtin.Type{ .int = .{
+            .signedness = int_info.signedness,
+            .bits = int_info.bits + 1,
+        } }),
+        .fields = out_fields[0..],
+        .decls = info.decls,
+        .is_exhaustive = true,
+    } });
+}
+
 pub fn shouldIgnoreWhitespace(comptime Grammar: type) bool {
     return @hasDecl(Grammar, "ignore_whitespace");
 }
@@ -57,6 +88,9 @@ fn isValid(comptime grammar: type) void {
         const info = @typeInfo(grammar);
         if (info != .@"struct") @compileError("The provided grammar must be a struct");
         if (!@hasField(grammar, "root")) @compileError("Grammar has no initial rule called 'root'");
+        if (@hasField(grammar, "repeat")) @compileError("'repeat' is a reserved keyword and can not be used.");
+        if (@hasField(grammar, "sequence")) @compileError("'sequence' is a reserved keyword and can not be used.");
+        if (@hasField(grammar, "regex")) @compileError("'regex' is a reserved keyword and can not be used.");
         const inner_info = @typeInfo(RulesEnum(grammar));
         for (inner_info.@"enum".fields) |field| {
             if (!@hasField(grammar, field.name)) comptimeLog(
