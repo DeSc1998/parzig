@@ -29,15 +29,25 @@ fn testExample() !void {
     const source2 = try allocator.dupe(u8, " test test test aoeussssnthaoeu");
     errdefer allocator.free(source2);
     var p2 = TestParser.init(allocator, source2);
-    const tree2 = p2.parse() catch |err| {
+    const tree = p2.parse() catch |err| {
         std.log.err("{}", .{err});
         try p2.printErrorContext();
         std.log.info("\nrest of input: {s}", .{p2.unparsed()});
         arena.deinit();
         std.process.exit(1);
     };
-    defer tree2.deinit();
-    try tree2.dumpTo(std.io.getStdOut().writer().any());
+    defer tree.deinit();
+    try tree.dumpTo(std.io.getStdOut().writer().any());
+
+    std.log.info("test example: testing access via enum", .{});
+    const root_node = tree.node(tree.root);
+    const seq_node = tree.node(root_node.children[0]);
+    std.log.info("first node in root: {}", .{seq_node.kind});
+    const repeat_node = tree.node(seq_node.children[0]);
+    std.log.info("first node in seqence: {s}", .{@tagName(repeat_node.kind)});
+    const _test_node = tree.node(repeat_node.children[0]);
+    std.debug.assert(_test_node.kind == ._test);
+
     std.log.info("rest of input: {s}", .{p2.unparsed()});
 }
 
