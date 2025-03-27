@@ -34,9 +34,7 @@ pub const Config = struct {
 
 pub fn RuleMap(comptime Grammar: type) StringMap(RuleFrom(RulesEnum(Grammar))) {
     isValid(Grammar);
-    if (isLeftRecursive(Grammar)) {
-        @compileError("the provided grammar is left recursive");
-    }
+    isLeftRecursive(Grammar);
     const Rule = RuleFrom(RulesEnum(Grammar));
     const Map = StringMap(RuleFrom(RulesEnum(Grammar)));
     const info = @typeInfo(Grammar);
@@ -71,7 +69,7 @@ pub fn ParserNodeKind(comptime Grammar: type) type {
     return @Type(std.builtin.Type{ .@"enum" = .{
         .tag_type = @Type(std.builtin.Type{ .int = .{
             .signedness = int_info.signedness,
-            .bits = int_info.bits + 1,
+            .bits = int_info.bits + 2,
         } }),
         .fields = out_fields[0..],
         .decls = info.decls,
@@ -101,9 +99,12 @@ fn isValid(comptime grammar: type) void {
         const info = @typeInfo(grammar);
         if (info != .@"struct") @compileError("The provided grammar must be a struct");
         if (!@hasField(grammar, "root")) @compileError("Grammar has no initial rule called 'root'");
-        if (@hasField(grammar, "repeat")) @compileError("'repeat' is a reserved keyword and can not be used.");
-        if (@hasField(grammar, "sequence")) @compileError("'sequence' is a reserved keyword and can not be used.");
-        if (@hasField(grammar, "regex")) @compileError("'regex' is a reserved keyword and can not be used.");
+        if (@hasField(grammar, "repeat"))
+            @compileError("'repeat' is a reserved keyword and can not be used as a rule.");
+        if (@hasField(grammar, "sequence"))
+            @compileError("'sequence' is a reserved keyword and can not be used as a rule.");
+        if (@hasField(grammar, "regex"))
+            @compileError("'regex' is a reserved keyword and can not be used as a rule.");
         const inner_info = @typeInfo(RulesEnum(grammar));
         for (inner_info.@"enum".fields) |field| {
             if (!@hasField(grammar, field.name)) comptimeLog(
@@ -136,13 +137,11 @@ fn concatUnique(
 ) []const RulesEnum(grammar) {
     const max_rule_count = @typeInfo(RulesEnum(grammar)).@"enum".fields.len;
     var out: [max_rule_count]RulesEnum(grammar) = undefined;
-    for (out[0..left.len], left) |*tmp, l| {
-        tmp.* = l;
-    }
+    @memcpy(out[0..left.len], left);
 
     var index: usize = left.len;
     for (right) |r| {
-        if (!std.mem.containsAtLeast(RulesEnum(grammar), out[0..left.len], 1, &.{r})) {
+        if (!std.mem.containsAtLeastScalar(RulesEnum(grammar), out[0..left.len], 1, r)) {
             out[index] = r;
             index += 1;
         }
@@ -154,10 +153,8 @@ fn firstRuleOf(comptime grammar: type, rule: RuleFrom(RulesEnum(grammar))) []con
     return comptime switch (rule) {
         .subrule => |r| &.{r},
         .regex => &.{},
-        .repeat => |rules| if (rules.len > 0) firstRuleOf(grammar, rules[0]) else &.{},
-        .seq => |rules| if (rules.len > 0) firstRuleOf(grammar, rules[0]) else &.{},
+        .repeat, .seq => |rules| if (rules.len > 0) firstRuleOf(grammar, rules[0]) else &.{},
         .choice => |rules| b: {
-            // TODO: if the choice is deeply nested with choices this is not accurate
             var tmp: []const RulesEnum(grammar) = &.{};
             for (rules) |r| {
                 const t = firstRuleOf(grammar, r);
@@ -168,31 +165,53 @@ fn firstRuleOf(comptime grammar: type, rule: RuleFrom(RulesEnum(grammar))) []con
     };
 }
 
+fn referencedSymbols(comptime grammar: type, rule: RuleFrom(RulesEnum(grammar))) []const RulesEnum(grammar) {
+    return comptime switch (rule) {
+        .subrule => |r| &.{r},
+        .regex => &.{},
+        .repeat, .seq, .choice => |rules| b: {
+            var out: []const RulesEnum(grammar) = &.{};
+            for (rules) |r| {
+                const tmp = referencedSymbols(grammar, r);
+                out = concatUnique(grammar, out, tmp);
+            }
+            break :b out;
+        },
+    };
+}
+
 /// Fails to compile if the grammar is left-recursive.
 /// It is assumed that `grammar` has been validated with `fn isValid`.
-fn isLeftRecursive(comptime grammar: type) bool {
+fn isLeftRecursive(comptime grammar: type) void {
+    // NOTE: branch quota of 1000 is quickly exceeded even by relativly small grammars
+    @setEvalBranchQuota(32000);
     const rules_info = @typeInfo(RulesEnum(grammar));
     const g = grammar{};
     var seen: [rules_info.@"enum".fields.len + 1]RulesEnum(grammar) = undefined;
-    seen[0] = .root;
     var seen_size: usize = 1;
+    seen[0] = .root;
+    var referenced: []const RulesEnum(grammar) = &.{.root};
     var current_index: usize = 0;
-    while (current_index < seen.len and !(current_index >= seen_size)) : (current_index += 1) {
-        const current_rule = seen[current_index];
+    while (current_index < referenced.len) : (current_index += 1) {
+        const current_rule = referenced[current_index];
         const current_seen_size = seen_size;
         const first = firstRuleOf(grammar, @field(g, @tagName(current_rule)));
         for (first) |e| {
-            if (std.mem.containsAtLeast(RulesEnum(grammar), seen[0..current_seen_size], 1, &.{e})) {
+            if (std.mem.containsAtLeastScalar(RulesEnum(grammar), seen[0..current_seen_size], 1, e)) {
                 comptimeLog(
-                    "left recursion detected in rule '{s}': recursion starts with '{s}'",
+                    "left recursion detected in rule '{s}': recursive loop starts with '{s}'",
                     .{ @tagName(current_rule), @tagName(e) },
                 );
             }
-            if (!std.mem.containsAtLeast(RulesEnum(grammar), seen[0..seen_size], 1, &.{e})) {
+            if (!std.mem.containsAtLeastScalar(RulesEnum(grammar), seen[0..seen_size], 1, e)) {
                 seen[seen_size] = e;
                 seen_size += 1;
             }
         }
+        referenced = concatUnique(
+            grammar,
+            referenced,
+            referencedSymbols(grammar, @field(g, @tagName(current_rule))),
+        );
     }
-    return false;
 }
