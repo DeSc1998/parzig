@@ -11,7 +11,11 @@ pub const Rules = enum {
     operator,
 };
 
-pub fn ignore_whitespace() void {}
+pub fn config() parzig.Config {
+    return .{
+        .ignore_whitespace = true,
+    };
+}
 
 root: Rule = .{ .subrule = .expression },
 

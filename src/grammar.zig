@@ -28,6 +28,10 @@ pub fn StringMap(comptime Type: type) type {
     return std.static_string_map.StaticStringMap(Type);
 }
 
+pub const Config = struct {
+    ignore_whitespace: bool = false,
+};
+
 pub fn RuleMap(comptime Grammar: type) StringMap(RuleFrom(RulesEnum(Grammar))) {
     isValid(Grammar);
     if (isLeftRecursive(Grammar)) {
@@ -75,8 +79,17 @@ pub fn ParserNodeKind(comptime Grammar: type) type {
     } });
 }
 
+pub fn configOf(comptime Grammar: type) Config {
+    if (@hasDecl(Grammar, "config")) {
+        return Grammar.config();
+    } else {
+        return .{};
+    }
+}
+
 pub fn shouldIgnoreWhitespace(comptime Grammar: type) bool {
-    return @hasDecl(Grammar, "ignore_whitespace");
+    const config = configOf(Grammar);
+    return config.ignore_whitespace;
 }
 
 /// Checks if the definitions of `grammar` are sound.

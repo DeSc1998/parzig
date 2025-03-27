@@ -37,19 +37,19 @@ const Parser = parzig.ParserFrom(@import("path/to/grammar.zig"));
 
 This grammar just tries to match the internal regex `""`.
 
-## Addional Options
+## Grammar Options
 
-Currently there is only one option available.
-
-### ignore whitespace
-
-Add following function definition to your grammar file:
-
-> NOTE: The signiture can be what ever you want.
+Add this if you want to change the default configuration:
 
 ```zig
-pub fn ignore_whitespace() void {}
+pub fn config() parzig.Config {
+    return .{};
+}
 ```
+
+### Available Options
+
+- `ignore_whitespace`: `bool` (default: false)
 
 ## Walking the Tree
 
