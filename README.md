@@ -2,7 +2,7 @@
 
 A parser generator which constructs its parsers at comptime.
 
-The way parsers and grammars written and used is heavily inspired by
+The way parsers and grammars are written and used is heavily inspired by
 [tree-sitter](https://github.com/tree-sitter/tree-sitter).
 
 # Usage
