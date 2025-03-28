@@ -5,11 +5,11 @@ const std = @import("std");
 // runner.
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
     const module = b.addModule("parzig", .{
         .root_source_file = b.path("src/root.zig"),
-        .optimize = .ReleaseSafe,
+        .optimize = optimize,
     });
     const exe = b.addExecutable(.{
         .name = "parzig-examples",
