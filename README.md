@@ -9,9 +9,8 @@ The way parsers and grammars are written and used is heavily inspired by
 
 ## Minimal Example
 
-Assume this code here is in a file:
-
 ```zig
+// MinimalExample.zig
 const parzig = @import("parzig");
 
 const Rule = parzig.RuleFrom(Rules);
@@ -26,7 +25,7 @@ when using the parser:
 
 ```zig
 const parzig = @import("parzig");
-const Parser = parzig.ParserFrom(@import("path/to/grammar.zig"));
+const Parser = parzig.ParserFrom(@import("MinimalExample.zig"));
 // ... in a function
     var parser = Parser.init(allocator, content);
     const tree = parser.parse() catch |err| {
