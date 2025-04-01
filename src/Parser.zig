@@ -196,7 +196,7 @@ pub fn Parser(comptime Grammar: type) type {
             const pos = self.current_position;
             var out = std.ArrayList(usize).init(self.allocator);
             const index = switch (rule) {
-                .regex => |expr| self.parseRegex(expr),
+                .regex => |expr| return self.parseRegexAs(expr, kind),
                 .subrule => |subrule| self.parseNode(subrule),
                 .choice, .seq, .repeat => self.parseBuildin(rule),
             } catch |err| {
@@ -288,6 +288,50 @@ pub fn Parser(comptime Grammar: type) type {
                 },
                 else => unreachable,
             }
+        }
+
+        fn parseRegexAs(self: *Self, expr: []const u8, kind: Self.RuleEnum) Error!usize {
+            const input = self.source[self.current_position..];
+            if (input.len == 0 and expr.len != 0)
+                return Error.EndOfInput;
+
+            switch (regex.match(expr, input, self.ignores_whitespace)) {
+                .succes => |out| {
+                    if (self.with_debug) {
+                        std.log.info("matched expression '{s}'", .{expr});
+                        std.log.info("result is '{s}'", .{out.match});
+                    }
+                    const node: Node = .{
+                        .kind = @enumFromInt(@intFromEnum(kind)),
+                        .allocator = self.allocator,
+                        .start_index = self.current_position + out.consumed - out.match.len,
+                        .end_index = self.current_position + out.consumed,
+                    };
+                    self.current_position += out.consumed;
+                    const index = self.node_buffer.items.len;
+                    try self.node_buffer.append(node);
+                    return index;
+                },
+                .failure => |f| {
+                    if (self.with_debug) {
+                        const sample = if (input.len >= 10) input[0..10] else input[0..];
+                        std.log.info("current source offset: {}", .{self.current_position});
+                        std.log.info("regex was: '{s}'", .{expr});
+                        std.log.info("message was: '{s}'", .{f.message});
+                        std.log.info("input sample: '{s}'", .{sample});
+                    }
+                    context = .{
+                        .message = f.message,
+                        .node = "",
+                        .source_offset = self.current_position,
+                        .char_count = f.source_offset,
+                        .regex_expr = expr,
+                        .regex_offset = f.regex_offset - 1,
+                    };
+                    return Error.RegexMatch;
+                },
+            }
+            unreachable;
         }
 
         fn parseRegex(self: *Self, expr: []const u8) Error!usize {
