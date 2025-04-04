@@ -199,17 +199,24 @@ pub fn Parser(comptime Grammar: type) type {
                 }
                 return err;
             };
-            try out.append(index);
-            const node: Node = .{
-                .allocator = self.allocator,
-                .kind = @enumFromInt(@intFromEnum(kind)),
-                .children = try out.toOwnedSlice(),
-                .start_index = pos,
-                .end_index = self.current_position,
-            };
-            const node_index = self.node_buffer.items.len;
-            try self.node_buffer.append(node);
-            return node_index;
+
+            const node_kind = self.node_buffer.items[index].kind;
+            if (node_kind == .sequence or node_kind == .repeat) {
+                self.node_buffer.items[index].kind = @enumFromInt(@intFromEnum(kind));
+                return index;
+            } else {
+                try out.append(index);
+                const node: Node = .{
+                    .allocator = self.allocator,
+                    .kind = @enumFromInt(@intFromEnum(kind)),
+                    .children = try out.toOwnedSlice(),
+                    .start_index = pos,
+                    .end_index = self.current_position,
+                };
+                const node_index = self.node_buffer.items.len;
+                try self.node_buffer.append(node);
+                return node_index;
+            }
         }
 
         fn parseSubrule(self: *Self, subrule: Self.RuleType) Error!usize {

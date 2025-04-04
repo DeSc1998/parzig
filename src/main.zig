@@ -45,9 +45,6 @@ fn testExample() !void {
     std.log.info("first node in root: {}", .{seq_node.kind});
     const repeat_node = tree.node(seq_node.children[0]);
     std.log.info("first node in seqence: {s}", .{@tagName(repeat_node.kind)});
-    const _test_node = tree.node(repeat_node.children[0]);
-    std.debug.assert(_test_node.kind == ._test);
-
     std.log.info("rest of input: {s}", .{p2.unparsed()});
 }
 
