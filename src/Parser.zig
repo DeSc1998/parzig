@@ -83,15 +83,8 @@ fn TreeFrom(comptime Enum: type) type {
         }
 
         fn indent(out: []u8, space_count: usize, level: usize) ![]const u8 {
-            var tmp = level;
             if (level * space_count >= out.len) return error.NotEnoughSpaceInTmpBuffer;
-
-            while (tmp > 0) {
-                for (0..space_count) |index| {
-                    out[tmp * space_count + index] = ' ';
-                }
-                tmp -= 1;
-            }
+            @memset(out[0 .. level * space_count], ' ');
             return out[0 .. level * space_count];
         }
     };
