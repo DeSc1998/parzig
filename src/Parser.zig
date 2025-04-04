@@ -6,6 +6,7 @@ const regex = @import("regex.zig");
 const Error = error{
     NotImplemented,
     RegexMatch,
+    EmptyRepeat,
     ChoiceMismatch,
     EndOfInput,
 } || std.mem.Allocator.Error;
@@ -191,7 +192,11 @@ pub fn Parser(comptime Grammar: type) type {
             const index = switch (rule) {
                 .regex => |expr| return self.parseRegexAs(expr, kind),
                 .subrule => |subrule| self.parseNode(subrule),
-                .choice, .seq, .repeat => self.parseBuildin(rule),
+                .choice, .seq => self.parseBuildin(rule),
+                .repeat => self.parseBuildin(rule) catch |err| b: {
+                    if (err == Error.EmptyRepeat) break :b self.parseRegexAs("", kind);
+                    break :b err;
+                },
             } catch |err| {
                 if (context) |*c| {
                     if (c.node.len == 0)
@@ -236,12 +241,15 @@ pub fn Parser(comptime Grammar: type) type {
                     while (self.parseSubrule(rule)) |index| {
                         try buffer.append(index);
                         for (rules[1..]) |r| {
-                            const tmp_index = try self.parseSubrule(r);
+                            const tmp_index = self.parseSubrule(r) catch |err| {
+                                if (err == Error.EmptyRepeat) continue;
+                                return err;
+                            };
                             try buffer.append(tmp_index);
                         }
                     } else |err| {
-                        if (err == Error.NotImplemented)
-                            return err;
+                        if (err == Error.NotImplemented) return err;
+                        if (buffer.items.len == 0) return Error.EmptyRepeat;
 
                         const repeat_node: Node = .{
                             .kind = .repeat,
@@ -258,7 +266,11 @@ pub fn Parser(comptime Grammar: type) type {
                 .seq => |rules| {
                     var buffer = std.ArrayList(usize).init(self.allocator);
                     for (rules) |rule| {
-                        try buffer.append(try self.parseSubrule(rule));
+                        const index = self.parseSubrule(rule) catch |err| {
+                            if (err == Error.EmptyRepeat) continue;
+                            return err;
+                        };
+                        try buffer.append(index);
                     }
                     const seq_node: Node = .{
                         .kind = .sequence,
@@ -275,11 +287,7 @@ pub fn Parser(comptime Grammar: type) type {
                     var was_end_of_input = true;
                     for (rules) |rule| {
                         const index = self.parseSubrule(rule) catch |err| {
-                            if (err == Error.EndOfInput) {
-                                was_end_of_input = was_end_of_input and true;
-                            } else {
-                                was_end_of_input = was_end_of_input and false;
-                            }
+                            was_end_of_input = was_end_of_input and err == Error.EndOfInput;
                             continue;
                         };
                         return index;
